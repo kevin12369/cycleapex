@@ -39,6 +39,23 @@ SESSION.headers.update({"User-Agent": UA, "Accept": "application/json,text/plain
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 OUT_FILE = os.path.join(OUT_DIR, "market.json")
 
+def load_env_local():
+    """无依赖加载项目根目录 .env，避免把密钥写进脚本或仓库。"""
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            if k and k not in os.environ:
+                os.environ[k] = v
+
+load_env_local()
+
 FRED_KEY = os.environ.get("FRED_KEY", "").strip()
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "").strip()
 
@@ -737,6 +754,7 @@ def main():
             "sub": " · ".join(f"{k} {round(v['score']*100)}" for k, v in macro.items()),
             "detail": macro,
         }
+        dims["macro"] = mscore   # 计入加权综合（修复：原仅写入 markets 未进 dims）
 
     # ---------- 加权综合（按可用维度归一化） ----------
     WEIGHTS = {"us_stocks": 0.18, "cn_stocks": 0.15, "bonds": 0.10,
