@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>中美金融市场牛熊仪表盘</title>
+  <link rel="stylesheet" href="./assets/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>中美金融市场牛熊仪表盘</h1>
+      <p>多维度牛熊判定 · 自动化数据更新 · 纯静态渲染</p>
+    </div>
+    <div class="meta">
+      <div>数据更新：<span id="updated">加载中…</span></div>
+      <div style="margin-top:6px">综合结论：<span id="overallBadge" class="badge unknown">—</span></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="section-title">市场维度 · 牛熊判定</div>
+    <div class="gauges" id="gauges"></div>
+
+    <div class="section-title">综合权重配置 <span class="sub">拖动调整十维度权重，自动重算综合结论（本地保存）</span></div>
+    <div class="card" id="weightPanel"></div>
+
+    <div class="layout" style="margin-top:22px">
+      <div class="card">
+        <div class="controls">
+          <select id="seriesSelect"></select>
+          <select id="compareSelect"><option value="">+ 对比标的（归一化）</option></select>
+          <div style="flex:1"></div>
+          <button class="btn range" data-r="21">1月</button>
+          <button class="btn range active" data-r="63">3月</button>
+          <button class="btn range" data-r="126">6月</button>
+          <button class="btn range" data-r="252">1年</button>
+        </div>
+        <div id="klineChart"></div>
+        <div id="indicatorChart"></div>
+      </div>
+
+      <div class="card">
+        <h3>牛熊热力图 <span class="sub">指标得分 [-1,1]</span></h3>
+        <div id="heatmapChart"></div>
+      </div>
+    </div>
+
+    <div class="section-title">分项明细</div>
+    <div class="card">
+      <div class="table-scroll">
+        <table class="detail" id="detailTable">
+          <thead><tr><th>市场</th><th>标的</th><th>最新</th><th>综合分</th><th>判定</th><th>均线</th><th>RSI</th><th>MACD</th><th>量能</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-title">技术-经济范式周期 · Pérez 框架</div>
+    <div class="card" id="paradigmCard">
+      <h3>技术革命浪潮 <span class="sub">每次约 50–60 年 · 当前所处以 ● 标注</span></h3>
+      <div id="paradigmTimeline" class="timeline"></div>
+      <h3 style="margin-top:14px">阶段相位 <span class="sub">导入期 → 展开期 · 当前相位以红框标注</span></h3>
+      <div id="paradigmPhases" class="phases"></div>
+      <div id="paradigmNote" class="paradigm-note"></div>
+      <div id="paradigmStructural" class="paradigm-signal"></div>
+    </div>
+
+    <div class="disclaimer">
+      数据来源：Yahoo Finance、东方财富、FRED、feargreedchart.com（详见仓库 README）。
+      牛熊判定为算法客观输出，<b>不构成任何投资建议</b>。本页为静态快照，由 <b>WorkBuddy 本地自动化</b> 定时重新生成（密钥仅存于本机 .env，不进仓库）。
+      范式框架引自 Carlota Pérez《技术革命与金融资本》。
+    </div>
+  </div>
+
+  <footer>
+    中美金融市场牛熊仪表盘 · 静态演示站点 · 数据经服务端抓取后落盘为 JSON，前端仅渲染 · WorkBuddy 本地自动化更新
+  </footer>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# 本地密钥（绝不入库）
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+
+# 编辑器
+.vscode/
+.idea/
+
+# 本地工作记忆（含自动化配置与项目记忆，绝不入库）
+.workbuddy/

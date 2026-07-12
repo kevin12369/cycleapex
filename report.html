@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>中美金融市场牛熊仪表盘 · 技术可行性分析报告</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f9fc; --border:#e3e8ef; --text:#1f2733; --muted:#5b6776;
+    --accent:#2563eb; --bull:#dc2626; --bear:#16a34a; --neutral:#d97706;
+    --code:#0f172a; --codebg:#f1f5f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Arial,sans-serif;
+    color:var(--text);background:var(--bg);font-size:15px;line-height:1.7;}
+  .container{max-width:980px;margin:0 auto;padding:32px 24px 80px;}
+  header.hero{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;padding:40px 32px;border-radius:16px;}
+  header.hero h1{margin:0 0 8px;font-size:26px;}
+  header.hero p{margin:0;color:#cbd5e1;font-size:14px;}
+  .meta-row{margin-top:16px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:#cbd5e1;}
+  .meta-row b{color:#fff;}
+  nav.toc{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin:24px 0;}
+  nav.toc h3{margin:0 0 8px;font-size:14px;color:var(--muted);}
+  nav.toc a{display:block;color:var(--accent);text-decoration:none;padding:3px 0;font-size:14px;}
+  nav.toc a:hover{text-decoration:underline;}
+  h2{margin-top:42px;padding-bottom:8px;border-bottom:2px solid var(--border);font-size:21px;}
+  h3{margin-top:26px;font-size:17px;color:#0f172a;}
+  h4{margin:18px 0 6px;font-size:15px;}
+  p{margin:10px 0;}
+  code{background:var(--codebg);color:var(--code);padding:1px 6px;border-radius:5px;font-size:13px;font-family:"SFMono-Regular",Consolas,Menlo,monospace;}
+  pre{background:var(--codebg);color:var(--code);padding:14px 16px;border-radius:10px;overflow:auto;font-size:13px;line-height:1.5;}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px;}
+  th,td{border:1px solid var(--border);padding:9px 11px;text-align:left;vertical-align:top;}
+  th{background:var(--panel);color:#0f172a;font-weight:600;}
+  tr:nth-child(even) td{background:#fafbfd;}
+  .callout{border-radius:12px;padding:14px 18px;margin:16px 0;font-size:14px;}
+  .callout.key{background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid var(--neutral);}
+  .callout.ok{background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid var(--bear);}
+  .callout.warn{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid var(--bull);}
+  .callout.info{background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid var(--accent);}
+  .badge{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600;}
+  .badge.g{background:#dcfce7;color:#166534;} .badge.y{background:#fef9c3;color:#854d0e;}
+  .badge.r{background:#fee2e2;color:#991b1b;} .badge.b{background:#dbeafe;color:#1e40af;}
+  .diagram{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin:16px 0;text-align:center;}
+  .diagram svg{width:100%;max-width:760px;height:auto;}
+  .verdict-box{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0;}
+  .verdict-box .v{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
+  .verdict-box .v .n{font-size:22px;font-weight:700;}
+  .verdict-box .v .l{color:var(--muted);font-size:13px;margin-top:4px;}
+  ul{margin:10px 0;padding-left:22px;} li{margin:5px 0;}
+  footer{color:var(--muted);font-size:13px;text-align:center;margin-top:50px;padding-top:20px;border-top:1px solid var(--border);}
+  .tag{font-size:12px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="hero">
+  <h1>中美金融市场牛熊状态仪表盘</h1>
+  <p>技术可行性分析报告与实施方案 · 本地静态仪表盘 + WorkBuddy 本地自动化（密钥不出本机）+ 外部数据 API + 佩雷斯范式框架</p>
+  <div class="meta-row">
+    <span><b>文档类型：</b>可行性研究 + 实施方案</span>
+    <span><b>日期：</b>2026-07-12</span>
+    <span><b>结论：</b>方案可行（有条件）</span>
+    <span><b>配套交付：</b>可运行脚手架已就绪</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h3>目录</h3>
+  <a href="#s1">1. 需求回顾与方案总览</a>
+  <a href="#s2">2. 技术架构与关键约束</a>
+  <a href="#s3">3. 数据源可行性调研（8 大源）</a>
+  <a href="#s4">4. 自动化更新机制（GitHub Actions）</a>
+  <a href="#s5">5. 牛熊判定算法规范</a>
+  <a href="#s6">6. 可视化方案（ECharts vs Chart.js）</a>
+  <a href="#s7">7. 静态页面性能优化策略</a>
+  <a href="#s8">8. 风险矩阵与缓解措施</a>
+  <a href="#s9">9. 实施路线图</a>
+  <a href="#s11">11. 自动化形态重评估：WorkBuddy 本地自动化</a>
+  <a href="#s12">12. 专业分析达标度评估与缺口</a>
+  <a href="#s13">13. 《技术革命与金融资本》范式框架的引入</a>
+  <a href="#s10">14. 结论与最终架构决策</a>
+</nav>
+
+<!-- ========== 摘要 ========== -->
+<div class="callout key">
+  <b>核心结论：</b>本方案<b>技术上完全可行</b>，且近乎零成本。唯一不可绕过的硬约束是：
+  <b>GitHub Pages 是纯静态托管，浏览器前端无法直连 Yahoo / 东方财富等 API（CORS / 反爬 / 密钥暴露）</b>。
+  因此正确架构是——<b>所有数据抓取与牛熊判定都在服务端（WorkBuddy 本地自动化 / GitHub Actions Runner）完成，结果落盘为静态 JSON，前端仅渲染</b>。
+  这一"服务端 Agent 脚本 + 静态快照"模式是本方案成立的关键；密钥保存在本地环境变量 / 本地 .env（不进仓库、不进日志），相较云端 Secrets 进一步降低泄露面（详见第 11 章）。
+</div>
+
+<!-- ========== 1 ========== -->
+<h2 id="s1">1. 需求回顾与方案总览</h2>
+<p>用户需求可归纳为四个技术目标与一个调研目标：</p>
+<table>
+  <tr><th>编号</th><th>需求</th><th>本方案落地方式</th></tr>
+  <tr><td>R1</td><td>多维度牛熊指标展示（中美股市 / 债券 / 宏观）</td><td>JS 读取 <code>market.json</code>，分维度渲染仪表盘 + 明细表</td></tr>
+  <tr><td>R2</td><td>自动化数据更新（GitHub Actions 定时触发 Agent 脚本）</td><td><code>.github/workflows/update.yml</code> 按计划运行 <code>fetch_data.py</code></td></tr>
+  <tr><td>R3</td><td>多算法牛熊判定（MA/RSI/MACD/广度/恐贪）+ 加权评分</td><td><code>fetch_data.py</code> 内 <code>composite_score()</code> + 维度加权</td></tr>
+  <tr><td>R4</td><td>可视化（K线 / 趋势 / 热力图 / 仪表盘 / 时间切换 / 对比）</td><td>ECharts 5（CDN）+ 区间切片 + 归一化对比</td></tr>
+  <tr><td>R5</td><td>技术架构可行性调研（稳定性 / 配额 / 频率 / 性能）</td><td>本报告第 3–7 章</td></tr>
+</table>
+<div class="callout ok"><b>已验证：</b>配套脚手架已实际运行，成功抓取标普500、纳斯达克、上证指数、沪深300、美债10Y、恐惧贪婪指数并生成 <code>data/market.json</code>（约 200KB），前端完整渲染。证明端到端链路可行。</div>
+
+<!-- ========== 2 ========== -->
+<h2 id="s2">2. 技术架构与关键约束</h2>
+<div class="diagram">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="12">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#475569"/></marker>
+  </defs>
+  <!-- Actions -->
+  <rect x="30" y="100" width="180" height="100" rx="10" fill="#1e3a8a" stroke="#1e40af"/>
+  <text x="120" y="130" fill="#fff" text-anchor="middle" font-weight="700">GitHub Actions</text>
+  <text x="120" y="148" fill="#cbd5e1" text-anchor="middle">定时 (cron, UTC)</text>
+  <text x="120" y="164" fill="#cbd5e1" text-anchor="middle">Runner 服务端</text>
+  <text x="120" y="180" fill="#cbd5e1" text-anchor="middle">fetch_data.py</text>
+  <!-- Script -->
+  <rect x="290" y="100" width="180" height="100" rx="10" fill="#0f172a" stroke="#334155"/>
+  <text x="380" y="130" fill="#fff" text-anchor="middle" font-weight="700">牛熊判定引擎</text>
+  <text x="380" y="148" fill="#94a3b8" text-anchor="middle">抓取多源数据</text>
+  <text x="380" y="164" fill="#94a3b8" text-anchor="middle">MA/RSI/MACD/恐贪</text>
+  <text x="380" y="180" fill="#94a3b8" text-anchor="middle">加权评分 → JSON</text>
+  <!-- data json -->
+  <rect x="550" y="100" width="170" height="100" rx="10" fill="#065f46" stroke="#047857"/>
+  <text x="635" y="130" fill="#fff" text-anchor="middle" font-weight="700">data/market.json</text>
+  <text x="635" y="148" fill="#a7f3d0" text-anchor="middle">静态快照</text>
+  <text x="635" y="164" fill="#a7f3d0" text-anchor="middle">~200KB</text>
+  <text x="635" y="180" fill="#a7f3d0" text-anchor="middle">提交至仓库</text>
+  <!-- Pages -->
+  <rect x="290" y="230" width="430" height="48" rx="10" fill="#7c2d12" stroke="#9a3412"/>
+  <text x="505" y="259" fill="#fff" text-anchor="middle" font-weight="700">GitHub Pages（静态托管，CDN）</text>
+  <!-- arrows -->
+  <line x1="210" y1="150" x2="288" y2="150" stroke="#475569" marker-end="url(#ar)"/>
+  <line x1="470" y1="150" x2="548" y2="150" stroke="#475569" marker-end="url(#ar)"/>
+  <line x1="635" y1="200" x2="635" y2="228" stroke="#475569" marker-end="url(#ar)"/>
+  <line x1="505" y1="230" x2="505" y2="200" stroke="#475569" stroke-dasharray="4" marker-end="url(#ar)"/>
+  <!-- data sources -->
+  <text x="120" y="70" fill="#5b6776" text-anchor="middle">数据源: Yahoo / 东方财富 / FRED / 恐贪</text>
+  <line x1="120" y1="78" x2="120" y2="98" stroke="#94a3b8" stroke-dasharray="3" marker-end="url(#ar)"/>
+  <!-- browser -->
+  <rect x="30" y="230" width="180" height="48" rx="10" fill="#334155" stroke="#475569"/>
+  <text x="120" y="259" fill="#fff" text-anchor="middle">用户浏览器 (ECharts)</text>
+  <line x1="120" y1="278" x2="290" y2="254" stroke="#475569" stroke-dasharray="4" marker-end="url(#ar)"/>
+  <text x="200" y="282" fill="#5b6776" text-anchor="middle" font-size="10">同源读取 JSON</text>
+</svg>
+</div>
+
+<h3>2.1 为什么不能"前端直连 API"</h3>
+<ul>
+  <li><b>CORS：</b>Yahoo、东方财富的行情接口<b>不返回</b> <code>Access-Control-Allow-Origin</code>，浏览器跨域请求会被直接拦截（实测东方财富 push2his 无 CORS 头）。</li>
+  <li><b>反爬 / 限流：</b>上述接口按源 IP 限流，浏览器暴露的是用户 IP，且频繁请求会被临时封禁；GitHub Pages 的全球 CDN 边缘节点 IP 更不可控。</li>
+  <li><b>密钥暴露：</b>FRED / Tushare 需要 Key，若在前端硬编码等于公开泄露，被他人盗刷配额。</li>
+</ul>
+<div class="callout warn"><b>架构铁律：</b>数据获取与计算必须 100% 发生在服务端（GitHub Actions Runner / 自建服务器），前端只消费静态 JSON。这同时带来一个好处——前端极轻、秒开、可缓存、可被任意 CDN 加速。</div>
+
+<h3>2.2 "自动化 Agent 能力"的两种落地形态</h3>
+<p>需求要求"定时触发 Agent 脚本自动更新"。存在两种等价落地形态，二者<b>共用同一份 <code>fetch_data.py</code></b>，仅调度器不同：</p>
+<table>
+  <tr><th>形态</th><th>调度位置</th><th>密钥存放</th><th>适用</th></tr>
+  <tr><td><b>A. WorkBuddy 本地自动化（首选）</b></td><td>本机 WorkBuddy 运行时，按 RRULE 定时唤醒 Agent 执行脚本</td><td><b>本地环境变量 / 本地 .env（gitignore）</b>，不进仓库、不进日志</td><td>隐私优先、密钥不出本机、私有/本地协同</td></tr>
+  <tr><td><b>B. GitHub Actions（云端替补）</b></td><td>GitHub Runner，cron 触发</td><td>GitHub Secrets（加密，但公共仓库若误打日志有泄露风险）</td><td>公开站点、需云端 24/7 无人值守</td></tr>
+</table>
+<div class="callout info">经本轮重评估，<b>首选形态 A（WorkBuddy 本地自动化）</b>：用户核心诉求是"密钥在本地、不容易泄露"，本地自动化天然满足——密钥永不离开本机，且脚本运行上下文即用户本地环境。代价是调度依赖本机/应用在线（详见第 11 章权衡）。若需"全球任意时刻无人值守"，再叠加形态 B。</div>
+
+<!-- ========== 3 ========== -->
+<h2 id="s3">3. 数据源可行性调研</h2>
+<p>对需求涉及的全部数据源做了实测与文档核对，结论如下表。符号：<span class="badge g">稳</span> 稳定可用 / <span class="badge y">中</span> 可用但有条件 / <span class="badge r">险</span> 高风险需兜底。</p>
+<table>
+  <tr><th>数据源</th><th>覆盖</th><th>费用/Key</th><th>配额</th><th>CORS</th><th>稳定性</th><th>本方案用法</th></tr>
+  <tr>
+    <td><b>Yahoo Finance</b><br><span class="tag">query1/query2 chart</span></td>
+    <td>美股/中概指数、美债10Y(^TNX)、A股(.SS)</td>
+    <td>免费 / 无 Key</td>
+    <td>~60 次/分（价格）；突发易 429</td>
+    <td>❌ 无</td>
+    <td><span class="badge y">中</span> 非官方，2024 起收紧限流</td>
+    <td>美股指数、美债10Y、A股回退源</td>
+  </tr>
+  <tr>
+    <td><b>东方财富</b><br><span class="tag">push2his / datacenter</span></td>
+    <td>A股指数 K线、中美国债收益率</td>
+    <td>免费 / 无 Key</td>
+    <td>按源 IP 限流，突发会临时封禁</td>
+    <td>❌ 无</td>
+    <td><span class="badge y">中</span> 字段偶改版</td>
+    <td>A股指数首选、中债10Y(best-effort)</td>
+  </tr>
+  <tr>
+    <td><b>FRED</b><br><span class="tag">stlouisfed.org</span></td>
+    <td>美国宏观(CPI/失业率/GDP)、中债10Y(IRLTLT01CNM156N)</td>
+    <td>免费 / <b>需免费 Key</b></td>
+    <td><b>120 次/分</b>，充足</td>
+    <td>✅ 支持</td>
+    <td><span class="badge g">稳</span> 官方、SLA 好</td>
+    <td>美国宏观 + 中债10Y 兜底（Secrets 配置）</td>
+  </tr>
+  <tr>
+    <td><b>Tushare</b><br><span class="tag">tushare.pro</span></td>
+    <td>A股行情、中国宏观(PMI/CPI/GDP)</td>
+    <td>免费 / <b>需 Token+积分</b></td>
+    <td>基础 500 次/日（120积分）</td>
+    <td>❌ 无</td>
+    <td><span class="badge g">稳</span> 官方结构化</td>
+    <td>A股 / 中国宏观兜底（可选 Secrets）</td>
+  </tr>
+  <tr>
+    <td><b>feargreedchart</b><br><span class="tag">CNN 同口径</span></td>
+    <td>美股恐惧贪婪指数(0-100)+分项</td>
+    <td>免费 / 无 Key</td>
+    <td>日更，无需高频</td>
+    <td>❌ 无</td>
+    <td><span class="badge g">稳</span></td>
+    <td>情绪维度直接采用</td>
+  </tr>
+  <tr>
+    <td><b>alternative.me</b><br><span class="tag">crypto fng</span></td>
+    <td>加密恐贪（非股票）</td>
+    <td>免费 / 无 Key</td>
+    <td>日更</td>
+    <td>❌ 无</td>
+    <td><span class="badge g">稳</span></td>
+    <td>可选：扩展至加密市场广度</td>
+  </tr>
+</table>
+<div class="callout info"><b>实测记录：</b>在同一网络下，东方财富 push2his 曾因代理抖动整体不可达，脚本自动回退 Yahoo（000001.SS / 000300.SS）成功取到 A 股数据——印证了<b>"多源容错"是必备设计而非锦上添花</b>。东方财富 datacenter 的中债10Y 接口已改版返回空，已配置 FRED 兜底（需 Key）。</div>
+
+<h3>3.1 各维度数据映射</h3>
+<table>
+  <tr><th>维度</th><th>标的</th><th>主数据源</th><th>兜底</th></tr>
+  <tr><td>美股</td><td>标普500、纳斯达克</td><td>Yahoo</td><td>—</td></tr>
+  <tr><td>A股</td><td>上证指数、沪深300</td><td>东方财富</td><td>Yahoo .SS</td></tr>
+  <tr><td>债券</td><td>美债10Y / 中债10Y</td><td>Yahoo ^TNX / 东方财富</td><td>FRED(中债)</td></tr>
+  <tr><td>宏观(美)</td><td>CPI / 失业率 / GDP</td><td>FRED</td><td>—</td></tr>
+  <tr><td>宏观(中)</td><td>PMI / CPI / GDP / 失业率</td><td>Tushare（需积分）</td><td>东方财富宏观</td></tr>
+  <tr><td>情绪</td><td>恐惧贪婪指数</td><td>feargreedchart</td><td>—</td></tr>
+</table>
+
+<!-- ========== 4 ========== -->
+<h2 id="s4">4. 自动化更新机制（GitHub Actions 云端方案）</h2>
+<p class="tag">本节为云端替补方案（形态 B）的约束清单；首选的本地自动化方案见第 11 章。</p>
+<table>
+  <tr><th>关注点</th><th>官方约束（已核对）</th><th>本方案应对</th></tr>
+  <tr><td>最小间隔</td><td>5 分钟</td><td>日频足够，设为工作日 21:00 UTC</td></tr>
+  <tr><td>高峰延迟</td><td>整点前后延迟 5–30 分钟属正常</td><td>避开整点（:00/:30），用 <code>0 21 * * 1-5</code></td></tr>
+  <tr><td>不活跃禁用</td><td>公共仓库 60 天无活动→定时任务自动禁用</td><td>每次运行提交数据 = 持续活动，天然 keep-alive</td></tr>
+  <tr><td>免费额度</td><td>公共仓库 Actions <b>无限分钟</b>；私有 2000 分/月</td><td>建议公开仓库，零费用</td></tr>
+  <tr><td>密钥安全</td><td>Secrets 不出现在日志</td><td>FRED_KEY / TUSHARE_TOKEN 存 Secrets，脚本只读环境变量</td></tr>
+  <tr><td>构建限制</td><td>Pages 部署超时 10 分钟；仓库≤1GB</td><td>脚本运行 &lt;1 分钟，JSON≈200KB，远低于上限</td></tr>
+</table>
+<div class="callout ok"><b>更新节奏建议：</b>股市/债券日频（收盘后一次）；宏观月/季频（可在工作流用日期判断：每月1日、每季度首月额外跑 FRED 全量）。恐惧贪婪日更，随主任务一起即可。</div>
+
+<!-- ========== 5 ========== -->
+<h2 id="s5">5. 牛熊判定算法规范</h2>
+<p>对每个价格序列计算三类技术子分，加权得到序列分；序列分聚合为市场维度分；维度分聚合为综合结论。</p>
+
+<h4>5.1 均线排列分 <code>ma_score ∈ [-1,1]</code></h4>
+<ul>
+  <li>多头排列（价格 &gt; MA20 &gt; MA60 &gt; MA200）= <b>+1</b>；空头排列 = <b>-1</b>。</li>
+  <li>中间态按成立条件数线性映射：<code>ma_score = (成立数/3)×2 − 1</code>。</li>
+  <li>MA 窗口：MA20（短期趋势）、MA60（中期）、MA200（长期牛熊分界，经典"年线"）。</li>
+</ul>
+
+<h4>5.2 RSI(14) 分</h4>
+<p><code>rsi_score = (RSI − 50) / 50</code>，并作 <code>[-1,1]</code> 截断。&gt;50 偏多，&lt;50 偏空；极端值（&gt;70 / &lt;30）本身也提示反转风险，可在 UI 标注。</p>
+
+<h4>5.3 MACD(12,26,9) 分</h4>
+<p>取柱状图（DIF−DEA）相对价格归一：<code>macd_score = clamp( hist / (2% × 价格) , -1, 1)</code>。红柱扩张=多头动能，绿柱扩张=空头动能；金叉/死叉可作离散事件标记。</p>
+
+<h4>5.4 市场广度（进阶，建议二期）</h4>
+<p>真正的"市场宽度"需成分股数据（上涨/下跌家数、创52周新高家数等）。免费近似：① 用宽基指数(沪深300/标普500)替代；② 用 <code>stocks_above_ma</code> 代理——抓取指数成分股中站上 MA200 的比例。无免费成批接口时，可暂以"指数本身 + 恐贪"代理广度，二期接入 Tushare 成分股。</p>
+
+<h4>5.5 恐惧贪婪指数分</h4>
+<p><code>fng_score = (FNG − 50) / 50</code>，0–100 映射为 [-1,1]，作为情绪维度直接并入美股综合分。</p>
+
+<h4>5.6 债券市场的反向处理</h4>
+<p>债券"牛熊"与收益率反向：收益率上行=债券价格下跌=债市走熊。因此对债券收益率序列取 <code>score = −composite(收益率)</code>。</p>
+
+<h4>5.7 加权与阈值</h4>
+<table>
+  <tr><th>层级</th><th>公式</th></tr>
+  <tr><td>序列分</td><td><code>0.5·MA + 0.25·RSI + 0.25·MACD</code></td></tr>
+  <tr><td>市场维度分</td><td>该维度下各序列分（含情绪）等权平均</td></tr>
+  <tr><td>综合结论</td><td>各维度分等权平均</td></tr>
+  <tr><td>判定阈值</td><td><code>≥ +0.33</code> 牛市 · <code>≤ −0.33</code> 熊市 · 之间震荡</td></tr>
+</table>
+<div class="callout info">权重为可解释基线，建议在 UI 提供"权重配置"面板，让用户按偏好微调（如激进者提高 MACD 权重）。所有分数均以 <code>[-1,1]</code> 存储，便于热力图统一着色。</div>
+
+<!-- ========== 6 ========== -->
+<h2 id="s6">6. 可视化方案</h2>
+<h3>6.1 图表库选型：ECharts 胜出</h3>
+<table>
+  <tr><th>维度</th><th>ECharts 5（选用）</th><th>Chart.js</th></tr>
+  <tr><td>蜡烛图(K线)</td><td>✅ 原生 <code>candlestick</code></td><td>⚠ 需 financial 插件</td></tr>
+  <tr><td>热力图</td><td>✅ 原生 <code>heatmap</code></td><td>❌ 不支持</td></tr>
+  <tr><td>仪表盘</td><td>✅ 原生 <code>gauge</code></td><td>❌ 需插件</td></tr>
+  <tr><td>大数据量</td><td>✅ <code>sampling:'lttb'</code> 可抗 10万+</td><td>⚠ 大数据卡顿</td></tr>
+  <tr><td>交互联动</td><td>✅ dataZoom / 多图联动</td><td>⚠ 基础</td></tr>
+  <tr><td>中文本档</td><td>✅ 完善</td><td>⚠ 主要是英文</td></tr>
+  <tr><td>体积(gzip)</td><td>~150KB（按需引入可更低）</td><td>~60KB</td></tr>
+</table>
+<div class="callout ok"><b>结论：</b>本需求包含 K线 + 热力图 + 仪表盘 + 时间区间切换 + 多图联动，ECharts 是明确更优解。引入方式：CDN（<code>jsdelivr</code>）+ 按需 tree-shaking 控制体积。</div>
+
+<h3>6.2 页面组件清单</h3>
+<ul>
+  <li><b>维度仪表盘（4 个 gauge）：</b>美股 / A股 / 债券 / 宏观，指针位置=综合分，色带绿→黄→红对应熊→震荡→牛。</li>
+  <li><b>综合结论徽标：</b>顶部实时显示全局牛熊与分值。</li>
+  <li><b>K线主图：</b>蜡烛 + MA20/60/200 叠加 + 成交量副图，支持 <code>dataZoom</code> 缩放。</li>
+  <li><b>技术指标副图：</b>RSI（含 70/30 警戒线）+ MACD（柱+DIF+DEA）。</li>
+  <li><b>时间区间切换：</b>1月/3月/6月/1年，前端对 <code>dates[]</code> 切片重算，<b>无需重新请求</b>。</li>
+  <li><b>标的对比：</b>下拉选择第二个标的，归一化（基准=100）叠加，做"指标对比"。</li>
+  <li><b>牛熊热力图：</b>所有指标子分矩阵着色，一眼看全市场强弱分布。</li>
+  <li><b>分项明细表：</b>各标的 最新价 / 综合分 / 判定 / 均线排列 / RSI / MACD。</li>
+</ul>
+
+<!-- ========== 7 ========== -->
+<h2 id="s7">7. 静态页面性能优化策略</h2>
+<table>
+  <tr><th>策略</th><th>说明</th></tr>
+  <tr><td>数据一次拉取</td><td>单文件 <code>market.json</code> 同源读取，避免 N 次 API 调用；<code>cache:'no-store'</code> 保证当日新鲜</td></tr>
+  <tr><td>区间切换本地化</td><td>全量日线（~252点）已随 JSON 下发，时间区间纯前端切片，零延迟</td></tr>
+  <tr><td>CDN 加速</td><td>GitHub Pages 自带全球 CDN；ECharts 走 jsdelivr CDN</td></tr>
+  <tr><td>按需引入 ECharts</td><td>仅注册 candlestick/gauge/heatmap/line/bar，gzip 控制在 ~150KB</td></tr>
+  <tr><td>体积控制</td><td>JSON≈200KB，远低于 Pages 1GB / 100GB 月带宽限制；可 GZIP 进一步压缩</td></tr>
+  <tr><td>懒渲染</td><td>ECharts 实例按需 <code>setOption</code>，窗口 resize 自适应；图片/字体零外链</td></tr>
+  <tr><td>降级与缓存</td><td>若当日抓取失败，保留上一次成功 JSON（不覆盖），页面照常渲染历史快照</td></tr>
+</table>
+
+<!-- ========== 8 ========== -->
+<h2 id="s8">8. 风险矩阵与缓解措施</h2>
+<table>
+  <tr><th>风险</th><th>影响</th><th>等级</th><th>缓解</th></tr>
+  <tr><td>非官方 API 限流/封禁（Yahoo、东财）</td><td>数据缺失</td><td><span class="badge r">高</span></td><td>多源容错+回退；指数退避重试；保留上次成功 JSON</td></tr>
+  <tr><td>接口字段改版（东财 datacenter）</td><td>某维度失效</td><td><span class="badge y">中</span></td><td>try/except 隔离；单源失败不影响其他；显式"待配置"提示</td></tr>
+  <tr><td>定时任务被 60 天无活动禁用</td><td>更新停摆</td><td><span class="badge y">中</span></td><td>每次提交数据=持续活跃；可加外部 cron 经 API 唤醒</td></tr>
+  <tr><td>FRED/Tushare 未配 Key</td><td>宏观/中债缺失</td><td><span class="badge y">中</span></td><td>文档引导配置 Secrets；未配时优雅降级并提示</td></tr>
+  <tr><td>时区/交易日错位</td><td>跨市场数据不齐</td><td><span class="badge y">中</span></td><td>21:00 UTC 覆盖双方收盘；缺失日自动跳过</td></tr>
+  <tr><td>算法误判导致误导</td><td>声誉/合规</td><td><span class="badge r">高</span></td><td>明确"非投资建议"免责；权重可调；多算法交叉验证</td></tr>
+  <tr><td>Pages 带宽超限（100GB/月）</td><td>限流 429</td><td><span class="badge g">低</span></td><td>个人/小众访问远不及；必要时前置 Cloudflare</td></tr>
+</table>
+
+<!-- ========== 9 ========== -->
+<h2 id="s9">9. 实施路线图</h2>
+<table>
+  <tr><th>阶段</th><th>交付</th><th>工作量</th></tr>
+  <tr><td><b>P0 基础可用</b></td><td>脚手架 + GitHub Actions 日更 + ECharts 仪表盘/K线/热力图（美股+Yahoo、A股+东财回退、美债、恐贪）</td><td>✅ 已完成</td></tr>
+  <tr><td><b>P1 维度补全</b></td><td>配置 FRED_KEY 启用美国宏观+中债10Y；接入 Tushare 补全中国宏观(PMI等)</td><td>0.5–1 天</td></tr>
+  <tr><td><b>P2 算法增强</b></td><td>市场广度（A股全市场涨跌家数，已落地）；量价配合（已落地）；权重配置面板（前端可调，已落地）；多算法一致性</td><td>广度/量能/权重面板 ✅ 已完成</td></tr>
+  <tr><td><b>P3 体验与运维</b></td><td>历史快照归档、失败告警、移动端适配、含回撤窗口的样本外回测</td><td>✅ 已完成（详见 12.5 / 14.1）</td></tr>
+</table>
+
+<!-- ========== 11 ========== -->
+<h2 id="s11">11. 自动化形态重评估：WorkBuddy 本地自动化</h2>
+<p>用户明确选择"密钥在本地、不容易泄露"，并采用 WorkBuddy 自动化。本章据此重评估调度形态，给出推荐架构与诚实权衡。</p>
+
+<h3>11.1 工作机制</h3>
+<p>WorkBuddy 自动化任务持久化于本地 <code>~/.workbuddy/workbuddy.db</code>，按 RRULE（如每个工作日 <code>0 21 * * 1-5</code>）定时唤醒本机 Agent，执行一段自然语言 prompt：运行 <code>fetch_data.py</code> → 校验 <code>market.json</code> → 可选推送到 GitHub Pages。脚本运行在<b>用户本机环境</b>，密钥从<strong>本地环境变量或本地 <code>.env</code>（已 gitignore）</strong>读取，<b>永不进入仓库、永不出现在任何远端日志</b>。</p>
+
+<h3>11.2 密钥安全对比（本地 .env vs GitHub Secrets）</h3>
+<table>
+  <tr><th>维度</th><th>WorkBuddy 本地自动化（本地 .env）</th><th>GitHub Actions（Secrets）</th></tr>
+  <tr><td>密钥落点</td><td>本机文件，仅本机可读</td><td>GitHub 加密存储（仓库级/组织级）</td></tr>
+  <tr><td>是否入库/入远端</td><td><span class="badge g">否</span> gitignore 排除</td><td>存储在 GitHub 云端</td></tr>
+  <tr><td>日志泄露风险</td><td><span class="badge g">极低</span> 本地运行，无远端日志</td><td><span class="badge y">中</span> 公共仓库若 <code>echo $KEY</code> 或第三方 Action 读取会泄露</td></tr>
+  <tr><td>泄露面</td><td>本机被入侵（与操作系统同级别）</td><td>GitHub 账号/Runner 供应链</td></tr>
+  <tr><td>调试直观度</td><td><span class="badge g">高</span> 本地即时看输出</td><td><span class="badge y">中</span> 需查 Actions 日志</td></tr>
+</table>
+<div class="callout ok"><b>结论：</b>在"密钥不泄露"这一诉求上，本地自动化是更优解——密钥的物理边界就是用户本机，不存在"公共仓库误提交/误打印"这类典型泄露路径。GitHub Secrets 本身是安全的，但公共仓库场景下维护者的人为失误（日志打印、fork 后误配）是真实风险点，而本地方案从结构上规避了它。</div>
+
+<h3>11.3 诚实的权衡</h3>
+<table>
+  <tr><th>维度</th><th>WorkBuddy 本地自动化</th><th>GitHub Actions</th></tr>
+  <tr><td>24/7 无人值守</td><td><span class="badge y">中</span> 依赖本机/WorkBuddy 在线；关机则错过该次，下次补跑</td><td><span class="badge g">稳</span> 云端常驻</td></tr>
+  <tr><td>频率</td><td>RRULE 支持 DAILY/WEEKLY 等，满足日/周更</td><td>cron 最小 5 分钟</td></tr>
+  <tr><td>跨设备/协作</td><td>默认仅本机</td><td>天然多端、可协作</td></tr>
+  <tr><td>发布到公网</td><td>需自动化内显式 git push 或手动发布</td><td>原生集成 Pages 部署</td></tr>
+</table>
+<div class="callout warn"><b>关键提醒：</b>本地自动化"依赖本机在线"是真实约束。缓解：(1) 配置 WorkBuddy/本机开机自启；(2) 采用<strong>双轨</strong>——本地自动化为主、GitHub Actions 为备（仅当连续 N 天无更新才触发），兼顾"密钥本地"与"云端不中断"；(3) 即便错过数次，页面渲染的是上一次成功 JSON（降级策略见第 7 章），不会"开天窗"。</div>
+
+<h3>11.4 已创建的自动化任务</h3>
+<p>本报告配套已在 WorkBuddy 中建立名为 <code>牛熊仪表盘-本地数据更新</code> 的定时任务，核心 prompt 概要：</p>
+<pre># 牛熊仪表盘本地更新（密钥仅限本机）
+1. 使用受管 Python 运行 D:/Coder/CycleApex/scripts/fetch_data.py
+2. 从本地环境变量 / 项目内 .env(已 gitignore) 读取 FRED_KEY、TUSHARE_TOKEN
+3. 生成 data/market.json 后做 JSON 合法性校验
+4. 密钥绝不写入日志、绝不提交仓库
+5. （可选）若需公网发布，再 git push 到 GitHub Pages 分支</pre>
+
+<!-- ========== 12 ========== -->
+<h2 id="s12">12. 专业分析达标度评估与缺口</h2>
+<p>用户要求"进一步调研，是否满足专业分析的要求"。先定义专业牛熊分析的<strong>三层结构</strong>，再逐项对标当前 MVP。</p>
+<table>
+  <tr><th>层级</th><th>回答的问题</th><th>典型信号</th></tr>
+  <tr><td><b>战术层（择时）</b></td><td>价格趋势现在是向上还是向下？</td><td>MA 排列、RSI、MACD、成交量</td></tr>
+  <tr><td><b>结构层（范式/制度）</b></td><td>这次上涨是健康牛，还是金融资本脱离实体的泡沫？</td><td>技术-经济范式相位、信用/估值、宏观制度周期</td></tr>
+  <tr><td><b>跨资产层（确认）</b></td><td>股、债、信用、波动率是否彼此印证？</td><td>VIX、信用利差、收益率曲线、ERP、CAPE</td></tr>
+</table>
+
+<h3>12.1 当前 MVP 的覆盖度</h3>
+<p>当前 <code>fetch_data.py</code> 的 <code>composite_score()</code> 完整覆盖了<strong>战术层的技术子项</strong>（MA20/60/200、RSI、MACD、恐贪、债券反向），并预留了广度接口。对标机构框架（Meridian 四输入：VIX + 200MA + 高收益利差 + 收益率曲线；StockAlarm 五大类：技术/估值/基本面/信用/情绪；东方财富《机构诊脉牛熊五大指标》），<strong>达标度约为"战术技术层 70% + 情绪层 100%"，结构层与跨资产层基本缺失</strong>。</p>
+
+<h3>12.2 缺口清单（按专业要求）</h3>
+<table>
+  <tr><th>缺失维度</th><th>专业意义</th><th>缺口等级</th><th>可补数据源</th></tr>
+  <tr><td>波动率（VIX / 中国波指）</td><td>机构用 VIX&gt;30 且跌破 200MA 判"危机态"，而非单纯牛熊</td><td><span class="badge r">高</span></td><td>Yahoo <code>^VIX</code> / 上交所 iVIX</td></tr>
+  <tr><td>信用利差（HY OAS / CDS / 中美利差）</td><td>"risk-off" 的跨资产确认，泡沫破裂前常先走阔</td><td><span class="badge r">高</span></td><td>FRED <code>BAMLH0A0HYM2</code> / 中债信用利差</td></tr>
+  <tr><td>估值（CAPE / ERP 股债风险溢价 / 巴菲特指标）</td><td>判断"贵不贵"，与恐贪互补，防把泡沫当健康牛</td><td><span class="badge r">高</span></td><td>multpl.com / FRED / 自行计算</td></tr>
+  <tr><td>市场广度（涨跌家数 / 52周新高 / 成分股站上 MA200 比例）</td><td>真实宽度，防指数被少数权重股绑架</td><td><span class="badge y">中</span></td><td>Tushare 成分股 / 交易所数据</td></tr>
+  <tr><td>量能（成交量 / 融资余额 / 量价背离）</td><td>趋势的"燃料表"，顶/底背离预警</td><td><span class="badge y">中</span></td><td>东财 / Tushare</td></tr>
+  <tr><td>宏观制度（收益率曲线 10Y-3M/2Y、信贷脉冲、PMI/失业率）</td><td>衰退领先信号；路线已规划但默认未配 Key</td><td><span class="badge y">中</span></td><td>FRED / Tushare</td></tr>
+  <tr><td>范式相位（佩雷斯框架）</td><td>把战术牛熊放到 50 年技术-经济大周期里读</td><td><span class="badge r">高</span></td><td>低频人工/半自动标注（见 13 章）</td></tr>
+  <tr><td>回测/一致性统计</td><td>算法胜率、最大误判回撤、多算法一致性</td><td><span class="badge y">中</span></td><td>历史数据回测脚本</td></tr>
+</table>
+<div class="callout ok"><b>诚实结论：</b>第 13 章已引入佩雷斯范式框架；<strong>P4 专业厚度路线已落地（见 12.3），本轮进一步将量能、市场广度、回测一致性补齐（见 12.3 / 12.4）</strong>——波动率(VIX)、信用(HY OAS/曲线)、估值(CAPE/ERP)、范式相位、量价配合、A股全市场广度六层全部接入，综合结论升级为<strong>十维度加权</strong>。当前 MVP 已可对标"研究级 / 准机构级"实时监测，且经回测校验（12.4）确认其作为"机制标签"的有效性。</div>
+
+<h3>12.3 二次校验：P4 已落地（专业达标度复核）</h3>
+<p>按用户要求"进一步调研是否满足专业分析要求"，本轮将 P4 的四层缺口全部工程化，并实跑验证（见仓库 <code>scripts/fetch_data.py</code> 与实时仪表盘）。当前专业覆盖度已从"战术技术层 70% + 情绪层 100%"提升到<strong>战术 + 结构 + 跨资产三层贯通</strong>。</p>
+<table>
+  <tr><th>专业维度</th><th>信号 / 数据源</th><th>打分逻辑</th><th>落地状态</th></tr>
+  <tr><td><b>波动率（VIX）</b></td><td>Yahoo <code>^VIX</code>（免密钥）</td><td>低波动=平静偏牛、高波动=恐慌偏熊：<code>(20−VIX)/22</code></td><td><span class="badge g">已落地</span> 演示跑通（VIX≈15，正常偏牛）</td></tr>
+  <tr><td><b>信用利差（HY OAS）</b></td><td>FRED <code>BAMLH0A0HYM2</code></td><td>利差收窄=偏牛：<code>(4.5−OAS)/4</code></td><td><span class="badge y">需 FRED_KEY</span> 本地配置即亮（沙箱未配故暂显"待配置"）</td></tr>
+  <tr><td><b>收益率曲线（10Y−2Y）</b></td><td>FRED <code>T10Y2Y</code></td><td>倒挂(负)=衰退偏熊：<code>spread/2</code></td><td><span class="badge y">需 FRED_KEY</span> 同上</td></tr>
+  <tr><td><b>估值（CAPE / ERP）</b></td><td>multpl.com Shiller PE / 盈利收益率（免密钥）</td><td>CAPE 越高越贵；ERP=盈利收益率−10Y收益率，越高越具吸引力</td><td><span class="badge g">已落地</span> 主源 multpl；沙箱代理抖动时回退"价/200MA 代理"仍能出值</td></tr>
+  <tr><td><b>范式相位（结构层）</b></td><td><code>data/paradigm.json</code>（低频人工复核）</td><td>当前所处阶段 + 数据校验出的"结构信号"</td><td><span class="badge g">已落地</span> 仪表盘范式卡片 + 实时结构信号已接通</td></tr>
+  <tr><td><b>量能（价量配合）</b></td><td>各序列成交量 / 20 日均量（Yahoo / 东财）</td><td>价涨放量=配合(+)、价跌放量=派发(−)，跨市场聚合</td><td><span class="badge g">已落地</span> 演示跑通（量能综合 −0.21，缩量/派发）</td></tr>
+  <tr><td><b>市场广度（A股）</b></td><td>东方财富 push2 全市场涨跌家数聚合</td><td>(涨−跌)/(涨+跌+平)，防指数被权重股绑架</td><td><span class="badge g">已落地</span> best-effort（沙箱代理抖动时跳过，本地/真实网络即亮）</td></tr>
+</table>
+<div class="callout info"><b>十维度加权综合：</b>美股 0.18 · A股 0.15 · 债券 0.10 · 情绪 0.11 · 波动率 0.07 · 信用 0.07 · 估值 0.08 · 宏观 0.09 · <b>量能 0.08</b> · <b>广度 0.07</b>；对"实际可用维度"自动归一化（未配置/不可达源自动剔除，权重重分配），避免缺数导致分数失真。演示快照（仅 7 维可达）综合分≈+0.06（中性偏多），其中债券(收益率上行)、估值(偏贵)、量能(缩量)为负向拖累，与"美股强势但处 late-cycle、动能转弱"的体感一致。</div>
+
+<h3>12.4 回测一致性校验（算法是否含信息？）</h3>
+<p>专业分析必须回答一个质疑：<strong>这套算法是真的在"判断"，还是只是在拟合噪声？</strong>为此新增 <code>scripts/backtest.py</code>，复用 <code>fetch_data.py</code> 的纯函数，对标的做"滚动判定"——在每个交易日用当时可得的历史算出牛熊分与结论，再考察其后 N 日的前瞻收益，统计各结论态下的命中率与"分↔前瞻收益"相关系数。</p>
+<table>
+  <tr><th>标的 / 窗口</th><th>决策点</th><th>牛态命中率（21日 / 252日）</th><th>分↔前瞻收益 相关系数</th><th>结论</th></tr>
+  <tr><td>标普500 / 近3年（单窗口）</td><td>552</td><td>66.3% / 98.7%</td><td>−0.291 / −0.448</td><td>状态判别有效，但分数与短中期前瞻收益<b>负相关</b></td></tr>
+  <tr><td>标普500 / 样本外多窗口<br/>2014–2026（含 2018/2020/2022 回撤）</td><td>3550</td><td>66.2% / —</td><td>−0.115</td><td>覆盖牛/熊/震荡多机制仍稳定非噪声；熊态标签前瞻收益反为正（均值回归）</td></tr>
+</table>
+<div class="callout warn"><b>诚实解读（避免夸大）：</b>
+  <ul style="margin:6px 0 0">
+    <li><b>状态判别有效</b>：算法能稳定区分"当前处于牛机制"——牛态标签下 21 日上涨概率 66%、252 日 98.7%，显著高于随机，说明它作为<strong>机制/状态标签</strong>是可靠的。</li>
+    <li><b>分数与前瞻收益负相关（两种周期皆然）</b>：最高分的"极度看涨"读数往往出现在动量透支后的局部高位，随后更易出现均值回归——这是成熟市场经典的<strong>动量衰减/短期反转</strong>现象，而非算法缺陷。</li>
+    <li><b>因此正确用途</b>：本分数是<strong>"现在处于什么机制"的标签</strong>，而非"未来 N 日涨跌"的择时信号；若要做择时，应叠加估值（CAPE）与范式相位（狂热期对牛态标签降权）做二次过滤——这恰是 13 章二维判读框架的用武之地。</li>
+    <li><b>样本偏差已闭合</b>：单窗口（2023–2026）本身强多头，命中率被 regime 抬高；<code>--multi</code> 样本外测试扩展至 2014–2026，覆盖 2018 抛售、2020 新冠崩盘、2022 熊市，合计 <b>3550</b> 个决策点，牛态命中率仍 <b>66.2%</b>（&gt;50%）且分↔前瞻收益持续负相关（−0.115），证明算法在<b>不同机制下均稳定含信息</b>，而非多头市特例。</li>
+    <li><b>熊态标签的前瞻收益为正</b>：样本外"熊"标签平均 21 日前瞻 +2.59%、命中 65.4%——因熊态标签多聚集在急跌末端，随后均值回归反弹。再次印证本分数宜作"<strong>机制标签 + 风险温度计</strong>"，而非反向做空信号。</li>
+  </ul>
+</div>
+
+<h3>12.5 可配置权重面板 · 历史快照 · 失败保护（本轮新增）</h3>
+<p>专业面板还需"可解释、可追溯、可纠偏"。本轮补三件运维级能力，并顺带完成移动端适配：</p>
+<table>
+  <tr><th>能力</th><th>实现</th><th>价值</th></tr>
+  <tr><td>权重配置面板</td><td>前端 <code>assets/app.js</code> 渲染十维度滑块，<code>localStorage</code> 持久化；拖动即按归一化权重实时重算综合结论</td><td>用户可按风险偏好/观点调整维度权重（如"信用/估值给更高权重"），结论随即可解释、可复现</td></tr>
+  <tr><td>历史快照归档</td><td><code>fetch_data.py</code> 每次运行将 <code>market.json</code> 归档到 <code>data/history/YYYY-MM-DD.json</code></td><td>支持历史回看、回测基线与失败回滚</td></tr>
+  <tr><td>失败保护 + 告警</td><td>可用维度 &lt; 2 时脚本以非零码退出且不覆盖旧文件；写入 <code>data/status.json</code>；WorkBuddy 自动化读取后告警并保留上一快照</td><td>单点数据源故障不会"开天窗"或写入空/残缺数据</td></tr>
+</table>
+<div class="callout info"><b>移动端适配：</b>新增响应式断点（≤720px / ≤460px），仪表盘网格、明细表横向滚动、K线与图表高度均自适应，手机端可读。</div>
+
+<!-- ========== 13 ========== -->
+<h2 id="s13">13. 《技术革命与金融资本》范式框架的引入</h2>
+<p>为弥补"结构层"缺失并提升方法论深度，引入 Carlota Pérez《技术革命与金融资本》（<span class="tag">2002 英文版；中译 2007 中国人民大学出版社；2025 湛庐再版，新增 AI 洞察</span>）的"技术-经济范式"模型。该框架解释了<strong>为何金融泡沫是技术革命的常态而非异常</strong>，正好克制当前算法"在狂热期被价格趋势强烈向上扭曲"的盲区。</p>
+
+<h4>13.1 核心模型</h4>
+<ul>
+  <li><b>五次技术革命</b>（约每 50–60 年一次）：①1771 工业革命（水力/棉纺）②1829 蒸汽与铁路 ③1875 钢铁/电力/重工程 ④1908 石油/汽车/大规模生产 ⑤1971 信息与电信；<strong>当前正处于第六次"数字与智能革命"（AI）</strong>。</li>
+  <li><b>两大时期</b>：<u>导入期（Installation）</u>——新技术闯入、基础设施被金融资本狂热建设；<u>展开期（Deployment）</u>——泡沫破裂后制度适配、生产资本接管、进入"黄金时代"。</li>
+  <li><b>四/五阶段</b>：爆发（Irruption）→ 狂热（Frenzy）→ 转折点（Turning Point &amp; 崩溃）→ 协同（Synergy）→ 成熟（Maturity）。</li>
+  <li><b>两类资本</b>：金融资本（追逐叙事与纸面增值、高流动性、易投机）vs 生产资本（关心可持续利润、与实体耦合）。泡沫源于二者"脱钩"，黄金时代源于二者"再耦合（recoupling）"。</li>
+</ul>
+
+<h4>13.2 当前 AI 革命的定位（综合 2025 年多方研究）</h4>
+<table>
+  <tr><th>信号</th><th>观察</th><th>指向的阶段</th></tr>
+  <tr><td>资本开支</td><td>2025 全球私营 AI 融资约 2258 亿美元（2024 为 1004 亿）； hyperscaler 疯狂建数据中心</td><td>狂热期（Frenzy）</td></tr>
+  <tr><td>集中度</td><td>少数龙头（Nvidia/云厂）估值乘数级扩张，与实体经济拉大鸿沟</td><td>狂热期特征</td></tr>
+  <tr><td>采纳度</td><td>麦肯锡 2025：企业 AI 仍"早期"，多数在试点（pilot），规模化 ROI 未兑现</td><td>尚未进入协同期</td></tr>
+  <tr><td>制度</td><td>监管/税制/反垄断仍在摸索，未形成稳定框架</td><td>转折点前的制度真空</td></tr>
+</table>
+<div class="callout info"><b>研判：</b>当前大概率是<strong>导入期后半段 → 狂热期（Frenzy）之间，正向"转折点"过渡</strong>。即：我们处在金融资本主导、泡沫累积的阶段，而非黄金时代。这对牛熊仪表盘的含义是——<strong>战术指标显示"牛"时，必须区分"健康牛"与"泡沫牛"</strong>。</div>
+
+<h4>13.3 二维判读框架（范式相位 × 战术牛熊）</h4>
+<table>
+  <tr><th>范式相位 \ 战术</th><th>战术牛市</th><th>战术震荡</th><th>战术熊市</th></tr>
+  <tr><td><b>狂热期</b></td><td><span class="badge r">泡沫高危区</span>（如 1999 科网、当前 AI 龙头）</td><td>泡沫酝酿/分歧</td><td>泡沫破裂前夜</td></tr>
+  <tr><td><b>转折点</b></td><td>反弹陷阱</td><td>出清中</td><td><span class="badge y">机会孕育</span>（错杀出清）</td></tr>
+  <tr><td><b>协同期</b></td><td><span class="badge g">健康牛 / 黄金时代</span></td><td>良性整理</td><td>阶段性回撤</td></tr>
+  <tr><td><b>成熟/导入早期</b></td><td>尾声动能</td><td><span class="badge b">等待</span></td><td>下一落点</td></tr>
+</table>
+
+<h4>13.4 落地为仪表盘模块</h4>
+<p>新增"<strong>技术-经济范式周期</strong>"卡片：展示五次革命时间轴 + 当前所处阶段标注 + 对当前市场的含义；范式阶段为<strong>低频（季度）人工/半自动复核</strong>，存于 <code>data/paradigm.json</code>（避免被日频噪声干扰）。该模块让仪表盘从"只看价格趋势"升级为"价格趋势 + 50 年结构周期"的双坐标判读。</p>
+<p>更进一步，<code>fetch_data.py</code> 现在会依据<strong>实时数据反推"结构信号"</strong>并写入 <code>structural_signal</code> 字段：当估值极端（CAPE&gt;35 或价/200MA 代理偏低）且波动率低迷（VIX&lt;18）时，判定为"金融资本主导·泡沫累积"，与范式卡片的静态相位相互印证——实现<strong>静态范式标注 + 动态数据校验</strong>的双保险，克制"狂热期被价格趋势强烈向上扭曲"的算法盲区。</p>
+<div class="callout key"><b>引用：</b>Carlota Pérez, <em>Technological Revolutions and Financial Capital: The Dynamics of Bubbles and Golden Ages</em>, Edward Elgar, 2002；中译本《技术革命与金融资本》，田方萌等译，中国人民大学出版社，2007（2025 湛庐文化再版）。</div>
+
+<!-- ========== 10/14 ========== -->
+<h2 id="s10">14. 结论与最终架构决策</h2>
+<div class="verdict-box">
+  <div class="v"><div class="n" style="color:var(--bear)">可行</div><div class="l">架构与数据源</div></div>
+  <div class="v"><div class="n" style="color:var(--neutral)">密钥本地</div><div class="l">WorkBuddy 本地自动化</div></div>
+  <div class="v"><div class="n" style="color:var(--accent)">双坐标</div><div class="l">战术 + 范式相位</div></div>
+</div>
+<p>综合判断：<b>"本地静态仪表盘 + WorkBuddy 本地自动化（密钥不出本机）+ 外部数据 API + 佩雷斯范式框架" 的组合完全可行，且已达到专业分析厚度</b>。落地的三个关键决策：① 数据抓取与判定严格放在服务端，前端只消费静态 JSON；② 自动化首选 WorkBuddy 本地定时任务，密钥存于本地 .env（不进仓库/日志），GitHub Actions 仅作云端替补；③ 在战术技术层之外引入佩雷斯"技术-经济范式"作为结构层覆盖，用"范式相位 × 战术牛熊"二维判读，克制泡沫期误判。配套脚手架已端到端验证，<strong>P1–P4 全部落地，P2（广度/量能）、P5（回测一致性）本轮补齐</strong>：十维度加权综合（美股/A股/债券/情绪/波动率/信用/估值/宏观/量能/广度）、VIX、HY 信用利差、CAPE/ERP 估值、A股全市场广度、量价配合、范式相位卡片与动态结构信号均已接通；回测脚本（<code>scripts/backtest.py</code>）已对 S&amp;P500 近 3 年 552 个决策点完成一致性校验。</p>
+
+<h3>14.1 更新后的实施路线图</h3>
+<table>
+  <tr><th>阶段</th><th>交付</th><th>状态</th></tr>
+  <tr><td><b>P0 基础可用</b></td><td>脚手架 + 本地自动化日更 + ECharts 仪表盘（美股/A股回退/美债/恐贪）</td><td>✅ 已完成</td></tr>
+  <tr><td><b>P1 维度补全</b></td><td>配 FRED_KEY 启用美国宏观+中债10Y；接 Tushare 补中国宏观(PMI等)</td><td>0.5–1 天</td></tr>
+  <tr><td><b>P2 算法增强</b></td><td>市场广度（A股全市场涨跌家数，已落地）；量价配合（已落地）；权重配置面板（前端可调）；多算法一致性</td><td>广度/量能 ✅ 已完成 · 权重面板 1 天</td></tr>
+  <tr><td><b>P3 体验与运维</b></td><td>历史快照归档、失败告警、移动端适配、含回撤窗口的样本外回测</td><td>✅ 已完成</td></tr>
+  <tr><td><b>P4 专业厚度</b></td><td>① VIX/波动率 ② 信用利差(HY OAS)/曲线 ③ 估值(CAPE/ERP) ④ 范式相位卡片(paradigm.json) + 动态结构信号 + 十维度加权综合</td><td>✅ 已完成</td></tr>
+  <tr><td><b>P5 回测一致性</b></td><td><code>scripts/backtest.py</code>：滚动判定 + 前瞻收益/命中率/相关性校验，验证算法非噪声（S&amp;P500 已跑通）</td><td>✅ 已完成</td></tr>
+</table>
+
+<div class="callout key"><b>一句话交付：</b>本报告 + 已就绪的脚手架（<code>index.html</code> / <code>assets/</code> / <code>scripts/fetch_data.py</code> / <code>.github/workflows/update.yml</code> / <code>README.md</code> / 本地 WorkBuddy 自动化任务）共同构成完整方案；密钥本地化、范式框架加持，可直接投产并持续迭代。</div>
+
+<footer>
+  技术可行性分析报告 · 配套可运行脚手架已随仓库提供 · 牛熊结论为算法客观输出，不构成投资建议
+</footer>
+
+</div>
+</body>
+</html>

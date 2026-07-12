@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "source": "Carlota Pérez, Technological Revolutions and Financial Capital (2002); 中译《技术革命与金融资本》, 2007 人大 / 2025 湛庐再版",
+    "updated": "2026-07-12",
+    "current_phase": "frenzy",
+    "note": "范式相位为低频（季度）人工/半自动复核，不随日频价格噪声波动。"
+  },
+  "revolutions": [
+    { "i": 1, "name": "工业革命", "tech": "水力 / 机械棉纺", "start": 1771, "country": "英国" },
+    { "i": 2, "name": "蒸汽与铁路", "tech": "蒸汽机 / 铁路", "start": 1829, "country": "英国 → 欧陆 / 美" },
+    { "i": 3, "name": "钢铁 / 电力", "tech": "廉价钢 / 电力 / 重工程", "start": 1875, "country": "美德" },
+    { "i": 4, "name": "石油 / 汽车", "tech": "汽车 / 石油 / 大规模生产", "start": 1908, "country": "美国" },
+    { "i": 5, "name": "信息与电信", "tech": "计算机 / 软件 / 互联网", "start": 1971, "country": "美国 → 全球" },
+    { "i": 6, "name": "数字与智能革命 (AI)", "tech": "AI / 智能体 / 算力网络", "start": 2022, "country": "美国 → 全球", "current": true }
+  ],
+  "phases": [
+    { "key": "irruption", "name": "爆发", "desc": "新技术闯入，风险投资驱动，基础设施起步", "period": "导入期" },
+    { "key": "frenzy", "name": "狂热", "desc": "金融资本主导，资产膨胀、投机、与实体脱钩", "period": "导入期", "current": true },
+    { "key": "turning", "name": "转折点", "desc": "泡沫破裂，制度重构，向生产资本交权", "period": "导入→展开" },
+    { "key": "synergy", "name": "协同", "desc": "技术-制度再耦合，生产资本主导，黄金时代", "period": "展开期" },
+    { "key": "maturity", "name": "成熟", "desc": "饱和，超额收益收敛，资本转向下一轮叙事", "period": "展开期" }
+  ],
+  "interpretation": "当前 AI 革命处于导入期后半段 → 狂热期（Frenzy）之间，金融资本主导、泡沫累积，尚未进入协同黄金时代。因此仪表盘战术指标显示「牛」时，必须区分「健康牛」与「泡沫牛」——这正是佩雷斯框架对纯技术指标的修正价值。"
+}

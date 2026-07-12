@@ -1,0 +1,29 @@
+{
+  "symbol": "^GSPC",
+  "years": 3,
+  "horizon_days": 252,
+  "n_records": 552,
+  "generated_at": "2026-07-12T03:47:15Z",
+  "summary_by_verdict": {
+    "neutral": {
+      "n": 241,
+      "avg_score": 0.077,
+      "avg_fwd_return_pct": 16.91,
+      "hit_rate_pct": 100.0
+    },
+    "bull": {
+      "n": 300,
+      "avg_score": 0.562,
+      "avg_fwd_return_pct": 12.03,
+      "hit_rate_pct": 98.7
+    },
+    "bear": {
+      "n": 11,
+      "avg_score": -0.422,
+      "avg_fwd_return_pct": 28.27,
+      "hit_rate_pct": 100.0
+    }
+  },
+  "score_forward_corr": -0.448,
+  "mean_fwd_return_pct": 14.49
+}

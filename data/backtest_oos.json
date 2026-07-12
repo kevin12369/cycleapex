@@ -1,0 +1,110 @@
+{
+  "symbol": "^GSPC",
+  "horizon_days": 21,
+  "windows": [
+    {
+      "window": "2014-2019",
+      "n_records": 1309,
+      "summary_by_verdict": {
+        "neutral": {
+          "n": 673,
+          "avg_score": 0.072,
+          "avg_fwd_return_pct": 0.97,
+          "hit_rate_pct": 67.9
+        },
+        "bull": {
+          "n": 572,
+          "avg_score": 0.577,
+          "avg_fwd_return_pct": 0.38,
+          "hit_rate_pct": 62.8
+        },
+        "bear": {
+          "n": 64,
+          "avg_score": -0.568,
+          "avg_fwd_return_pct": 3.49,
+          "hit_rate_pct": 79.7
+        }
+      },
+      "score_forward_corr": -0.18,
+      "mean_fwd_return_pct": 0.83
+    },
+    {
+      "window": "2019-2023",
+      "n_records": 1057,
+      "summary_by_verdict": {
+        "bull": {
+          "n": 472,
+          "avg_score": 0.574,
+          "avg_fwd_return_pct": 0.69,
+          "hit_rate_pct": 71.4
+        },
+        "neutral": {
+          "n": 498,
+          "avg_score": 0.028,
+          "avg_fwd_return_pct": 1.16,
+          "hit_rate_pct": 62.4
+        },
+        "bear": {
+          "n": 87,
+          "avg_score": -0.541,
+          "avg_fwd_return_pct": 2.54,
+          "hit_rate_pct": 60.9
+        }
+      },
+      "score_forward_corr": -0.098,
+      "mean_fwd_return_pct": 1.07
+    },
+    {
+      "window": "2021-2026",
+      "n_records": 1184,
+      "summary_by_verdict": {
+        "neutral": {
+          "n": 585,
+          "avg_score": 0.037,
+          "avg_fwd_return_pct": 1.09,
+          "hit_rate_pct": 63.8
+        },
+        "bull": {
+          "n": 516,
+          "avg_score": 0.566,
+          "avg_fwd_return_pct": 0.69,
+          "hit_rate_pct": 65.3
+        },
+        "bear": {
+          "n": 83,
+          "avg_score": -0.542,
+          "avg_fwd_return_pct": 1.94,
+          "hit_rate_pct": 59.0
+        }
+      },
+      "score_forward_corr": -0.091,
+      "mean_fwd_return_pct": 0.98
+    }
+  ],
+  "combined": {
+    "n_records": 3550,
+    "summary_by_verdict": {
+      "neutral": {
+        "n": 1756,
+        "avg_score": 0.048,
+        "avg_fwd_return_pct": 1.07,
+        "hit_rate_pct": 65.0
+      },
+      "bull": {
+        "n": 1560,
+        "avg_score": 0.572,
+        "avg_fwd_return_pct": 0.58,
+        "hit_rate_pct": 66.2
+      },
+      "bear": {
+        "n": 234,
+        "avg_score": -0.549,
+        "avg_fwd_return_pct": 2.59,
+        "hit_rate_pct": 65.4
+      }
+    },
+    "score_forward_corr": -0.115,
+    "mean_fwd_return_pct": 0.95
+  },
+  "generated_at": "2026-07-12T08:30:07Z"
+}

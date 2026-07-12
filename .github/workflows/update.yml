@@ -1,0 +1,50 @@
+name: Update Market Data
+
+on:
+  schedule:
+    # 每周一至周五 21:00 UTC（美股收盘后、覆盖当日A股数据）。GitHub 采用 UTC，最小粒度 5 分钟。
+    # 注意：公共仓库若 60 天无任何活动，定时任务会被自动禁用；本工作流每次都会提交数据，
+    #       因此只要持续运行即可保持仓库活跃，无需额外 keep-alive。
+    - cron: "0 21 * * 1-5"
+  workflow_dispatch: {}   # 允许手动触发 / 通过 API 精确触发
+
+permissions:
+  contents: write        # 提交生成的 data/market.json
+
+concurrency:
+  group: update-market
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir requests
+
+      - name: Fetch & compute bull/bear data
+        env:
+          FRED_KEY: ${{ secrets.FRED_KEY }}            # 可选：启用美国宏观 + 中债10Y
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}  # 可选：A股兜底数据源
+        run: python scripts/fetch_data.py
+
+      - name: Commit updated data
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "github-actions[bot]"
+          git add -A data/
+          if git diff --cached --quiet; then
+            echo "无数据变化，跳过提交"
+          else
+            git commit -m "data: 自动更新市场牛熊数据 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
