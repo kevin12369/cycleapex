@@ -48,12 +48,12 @@
         pointer: { width: 4, length: "58%" },
         axisTick: { show: false },
         splitLine: { length: 8, lineStyle: { color: "#3a4350", width: 1 } },
-        axisLabel: { distance: 10, color: "#8b949e", fontSize: 9,
+        axisLabel: { distance: 10, color: "#8b949e", fontSize: 11,
           formatter: (v) => (v === -100 || v === 0 || v === 100 ? v : "") },
         anchor: { show: true, size: 8, itemStyle: { color: "#888" } },
         detail: { valueAnimation: true, formatter: val + "", color: "#e6edf3",
-          fontSize: 22, offsetCenter: [0, "28%"] },
-        title: { offsetCenter: [0, "62%"], color: "#8b949e", fontSize: 11 },
+          fontSize: 24, offsetCenter: [0, "28%"] },
+        title: { offsetCenter: [0, "62%"], color: "#8b949e", fontSize: 13 },
         data: [{ value: val, name: label }]
       }]
     };
