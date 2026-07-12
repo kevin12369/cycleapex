@@ -324,10 +324,14 @@
       backgroundColor: "transparent",
       tooltip: { position: "top", formatter: (p) =>
         `${groups[p.value[1]]} / ${names[p.value[0]]}<br/>得分: ${p.value[2]}` },
-      grid: { left: 56, right: 20, top: 10, bottom: 86 },
-      xAxis: { type: "category", data: names, axisLabel: { color: "#8b949e", rotate: 30,
-                 fontSize: 11, interval: 0, overflow: "truncate", width: 80 },
-               splitArea: { show: true } },
+      grid: { left: 56, right: 20, top: 10, bottom: 100 },
+      xAxis: { type: "category", data: names, axisLabel: { color: "#8b949e", rotate: 45,
+                 fontSize: 9, interval: 0, overflow: "truncate", width: 52,
+                 formatter: (v) => (v.length <= 5 ? v : v.slice(0, 4) + "…")
+               },
+               splitArea: { show: true },
+               tooltip: { show: true }
+             },
       yAxis: { type: "category", data: groups, axisLabel: { color: "#8b949e" },
                splitArea: { show: true } },
       visualMap: { min: -100, max: 100, calculable: true, orient: "horizontal",
