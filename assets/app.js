@@ -39,19 +39,19 @@
     return {
       series: [{
         type: "gauge", min: -100, max: 100, startAngle: 210, endAngle: -30,
-        center: ["50%", "58%"], radius: "92%",
-        progress: { show: true, width: 12, itemStyle: { color: verdictColor(verdict) } },
-        axisLine: { lineStyle: { width: 12, color: [
+        center: ["50%", "56%"], radius: "78%",
+        progress: { show: true, width: 10, itemStyle: { color: verdictColor(verdict) } },
+        axisLine: { lineStyle: { width: 10, color: [
           [0.33, COLORS.bear], [0.66, COLORS.neutral], [1, COLORS.bull] ] } },
-        pointer: { width: 5, length: "62%" },
+        pointer: { width: 4, length: "58%" },
         axisTick: { show: false },
-        splitLine: { length: 10, lineStyle: { color: "#3a4350", width: 1 } },
-        axisLabel: { distance: 14, color: "#8b949e", fontSize: 9,
+        splitLine: { length: 8, lineStyle: { color: "#3a4350", width: 1 } },
+        axisLabel: { distance: 10, color: "#8b949e", fontSize: 9,
           formatter: (v) => (v === -100 || v === 0 || v === 100 ? v : "") },
-        anchor: { show: true, size: 10, itemStyle: { color: "#888" } },
+        anchor: { show: true, size: 8, itemStyle: { color: "#888" } },
         detail: { valueAnimation: true, formatter: val + "", color: "#e6edf3",
-          fontSize: 26, offsetCenter: [0, "32%"] },
-        title: { offsetCenter: [0, "70%"], color: "#8b949e", fontSize: 12 },
+          fontSize: 22, offsetCenter: [0, "28%"] },
+        title: { offsetCenter: [0, "62%"], color: "#8b949e", fontSize: 11 },
         data: [{ value: val, name: label }]
       }]
     };
@@ -316,17 +316,19 @@
       backgroundColor: "transparent",
       tooltip: { position: "top", formatter: (p) =>
         `${groups[p.value[1]]} / ${names[p.value[0]]}<br/>得分: ${p.value[2]}` },
-      grid: { left: 56, right: 14, top: 10, bottom: 70 },
-      xAxis: { type: "category", data: names, axisLabel: { color: "#8b949e", rotate: 35 },
+      grid: { left: 56, right: 20, top: 10, bottom: 86 },
+      xAxis: { type: "category", data: names, axisLabel: { color: "#8b949e", rotate: 30,
+                 fontSize: 11, interval: 0, overflow: "truncate", width: 80 },
                splitArea: { show: true } },
       yAxis: { type: "category", data: groups, axisLabel: { color: "#8b949e" },
                splitArea: { show: true } },
       visualMap: { min: -100, max: 100, calculable: true, orient: "horizontal",
-        left: "center", bottom: 8, precision: 0,
+        left: "center", bottom: 12, precision: 0, itemWidth: 14, itemHeight: 80,
         inRange: { color: [COLORS.bear, "#1c4a35", "#3a3f1f", COLORS.neutral, "#4a2530", COLORS.bull] },
-        textStyle: { color: "#8b949e" } },
+        textStyle: { color: "#8b949e", fontSize: 11 } },
       series: [{ name: "得分", type: "heatmap", data: data,
         label: { show: true, color: "#fff", fontSize: 10, formatter: (p) => p.value[2] },
+        itemStyle: { borderRadius: 3, borderColor: "#1a1f27", borderWidth: 1 },
         emphasis: { itemStyle: { shadowBlur: 8, shadowColor: "rgba(0,0,0,.4)" } } }]
     }, true);
   }
