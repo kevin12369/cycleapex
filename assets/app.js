@@ -34,6 +34,8 @@
   }
 
   // ---------------- 仪表盘 ----------------
+  let GAUGE_INSTANCES = {};   // 缓存所有 gauge 实例，重渲染前显式 dispose，避免 canvas/series 叠加
+
   function gaugeOption(label, score, verdict) {
     const val = Math.round((score || 0) * 100);
     return {
@@ -72,6 +74,9 @@
       { key: "macro", label: "宏观" },
     ];
     const host = document.getElementById("gauges");
+    // 先释放旧实例，避免 innerHTML 清空后 canvas 仍残留或 ECharts 内部 series 合并导致叠加
+    Object.values(GAUGE_INSTANCES).forEach((inst) => { try { inst.dispose(); } catch (e) {} });
+    GAUGE_INSTANCES = {};
     host.innerHTML = "";
     cats.forEach((c) => {
       const div = document.createElement("div");
@@ -97,7 +102,10 @@
       const s = document.createElement("div"); s.className = "sub"; s.textContent = sub;
       div.appendChild(title); div.appendChild(chart); div.appendChild(s);
       host.appendChild(div);
-      echarts.init(chart).setOption(gaugeOption(c.label, score, verdict));
+      const inst = echarts.init(chart);
+      GAUGE_INSTANCES[c.key] = inst;
+      inst.setOption(gaugeOption(c.label, score, verdict), true); // true = notMerge，防止旧数据叠加
+      requestAnimationFrame(() => { try { inst.resize(); } catch (e) {} });
     });
   }
 
