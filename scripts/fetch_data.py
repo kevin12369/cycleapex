@@ -758,10 +758,64 @@ def main():
         }
         dims["macro"] = mscore   # 计入加权综合（修复：原仅写入 markets 未进 dims）
 
+    # ---------- 韩国 KOSPI（全球风险 / 半导体周期领先指标，Yahoo 免密钥） ----------
+    ks_raw = fetch_yahoo("^KS11")
+    if ks_raw:
+        ks = build_series("韩国KOSPI", "^KS11", ks_raw)
+        blk = series_indicators_block(ks)
+        heatmap.append(["韩股", "KOSPI-均线", blk["ma"]])
+        heatmap.append(["韩股", "KOSPI-RSI", blk["rsi"]])
+        heatmap.append(["韩股", "KOSPI-MACD", blk["macd"]])
+        kr_score = ks["score"]
+        add_dim("kr_stocks", "韩股", kr_score, verdict_from_score(kr_score),
+                f"KOSPI 最新 {ks['latest']}", {"series": [ks]})
+        print(f"  [OK] 韩股 KOSPI 最新 {ks['latest']} 分 {kr_score}")
+    else:
+        print("  [SKIP] KOSPI 抓取失败")
+
+    # ---------- 黄金（避险/实际利率代理；按自身价格趋势计综合分，徽章即金价真实方向） ----------
+    gold_raw = fetch_yahoo("GC=F")
+    if gold_raw:
+        g = build_series("黄金", "GC=F", gold_raw)
+        blk = series_indicators_block(g)
+        heatmap.append(["黄金", "金价-均线", blk["ma"]])
+        heatmap.append(["黄金", "金价-RSI", blk["rsi"]])
+        heatmap.append(["黄金", "金价-MACD", blk["macd"]])
+        gold_score = g["score"]
+        add_dim("gold", "黄金(避险)", gold_score, verdict_from_score(gold_score),
+                f"COMEX黄金 最新 {g['latest']}（避险/实际利率代理）", {"series": [g]})
+        print(f"  [OK] 黄金 最新 {g['latest']} 分 {gold_score}")
+    else:
+        print("  [SKIP] 黄金 抓取失败")
+
+    # ---------- 日元套息交易（USD/JPY 动量 → 套息健康度） ----------
+    jpy_raw = fetch_yahoo("JPY=X")
+    if jpy_raw:
+        cj = [x for x in jpy_raw["close"] if x is not None]
+        fx_series = [build_series("美元兑日元", "JPY=X", jpy_raw)]
+        if len(cj) >= 22:
+            mom = cj[-1] / cj[-21] - 1
+        elif len(cj) >= 2:
+            mom = cj[-1] / cj[0] - 1
+        else:
+            mom = 0
+        carry_score = round(clamp(mom / 0.05), 3)
+        regime = ("套息顺畅·risk-on" if mom > 0.01 else
+                  "套息承压·risk-off" if mom < -0.01 else "中性")
+        add_dim("yen_carry", "日元/套息", carry_score, verdict_from_score(carry_score),
+                f"USD/JPY 20日变动 {mom*100:+.1f}% · {regime}",
+                {"usdjpy": round(cj[-1], 2), "mom20": round(mom, 4)})
+        heatmap.append(["套息", "日元套息健康度", carry_score])
+        markets.setdefault("fx", {"label": "外汇", "series": fx_series})
+        print(f"  [OK] 日元套息 USD/JPY {cj[-1]:.2f} 20日{mom*100:+.1f}% 分 {carry_score} ({regime})")
+    else:
+        print("  [SKIP] USD/JPY 抓取失败")
+
     # ---------- 加权综合（按可用维度归一化） ----------
-    WEIGHTS = {"us_stocks": 0.18, "cn_stocks": 0.15, "bonds": 0.10,
-               "sentiment": 0.11, "volatility": 0.07, "credit": 0.07,
-               "valuation": 0.08, "macro": 0.09, "volume": 0.08, "breadth": 0.07}
+    WEIGHTS = {"us_stocks": 0.15, "cn_stocks": 0.13, "kr_stocks": 0.06,
+               "bonds": 0.09, "gold": 0.05, "sentiment": 0.10,
+               "volatility": 0.06, "credit": 0.06, "valuation": 0.07,
+               "macro": 0.08, "volume": 0.07, "breadth": 0.06, "yen_carry": 0.05}
     present = {k: v for k, v in dims.items() if k in WEIGHTS}
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
@@ -802,6 +856,9 @@ def main():
             "us_10y": "Yahoo Finance ^TNX",
             "cn_10y": "东方财富 datacenter (best-effort) / FRED IRLTLT01CNM156N",
             "vix": "Yahoo Finance ^VIX",
+            "kr_indices": "Yahoo Finance ^KS11",
+            "gold": "Yahoo Finance GC=F",
+            "fx": "Yahoo Finance JPY=X",
             "fng": "feargreedchart.com",
             "valuation": "multpl.com (Shiller CAPE / 盈利收益率)",
             "breadth": "东方财富 push2 全市场涨跌家数 (best-effort)",
@@ -826,6 +883,9 @@ def main():
                 "广度维度 = (涨家数-跌家数)/(涨+跌+平)，反映全市场宽度而非指数被权重股绑架",
                 "综合分 = 各维度分按权重加权，并对「实际可用维度」归一化（未配置源自动剔除）",
                 "结构层：引入 Carlota Pérez 技术-经济范式周期，叠加广度/量能背离校验，作为战术牛熊之上的制度背景",
+                "韩国 KOSPI：高 Beta、半导体/出口敏感市场，作全球风险与 AI 硬件周期领先指标（kr_stocks）",
+                "黄金维度作避险/实际利率代理，按自身价格趋势计综合分（金价走强常伴随避险需求/实际利率下行）",
+                "日元套息维度 = clamp(USD/JPY 近20日变动 / 5%)：JPY 弱=套息顺畅=risk-on，JPY 急升=平仓=risk-off（yen_carry）",
             ],
         },
         "structural_signal": structural,

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>中美金融市场牛熊仪表盘</title>
-  <link rel="stylesheet" href="./assets/style.css?v=2" />
+  <link rel="stylesheet" href="./assets/style.css?v=3" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -19,11 +19,24 @@
     </div>
   </header>
 
+  <section class="hero" id="hero">
+    <div class="hero-verdict">
+      <div class="hero-badge" id="heroBadge">—</div>
+      <div class="hero-score" id="heroScore">综合分 —</div>
+      <div class="hero-hint">AI 综合牛熊结论</div>
+    </div>
+    <div class="hero-body">
+      <div class="hero-title">AI 结论 · 结构信号</div>
+      <p class="hero-structural" id="heroStructural">加载中…</p>
+      <div class="hero-chips" id="heroChips"></div>
+    </div>
+  </section>
+
   <div class="wrap">
     <div class="section-title">市场维度 · 牛熊判定</div>
     <div class="gauges" id="gauges"></div>
 
-    <div class="section-title">综合权重配置 <span class="sub">拖动调整十维度权重，自动重算综合结论（本地保存）</span></div>
+    <div class="section-title">综合权重配置 <span class="sub">拖动调整各维度权重，自动重算综合结论（本地保存）</span></div>
     <div class="card" id="weightPanel"></div>
 
     <div class="layout" style="margin-top:22px">
@@ -78,6 +91,6 @@
     中美金融市场牛熊仪表盘 · 静态演示站点 · 数据经服务端抓取后落盘为 JSON，前端仅渲染 · WorkBuddy 本地自动化更新
   </footer>
 
-  <script src="./assets/app.js?v=6"></script>
+  <script src="./assets/app.js?v=7"></script>
 </body>
 </html>

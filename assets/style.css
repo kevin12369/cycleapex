@@ -106,6 +106,28 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
   border: 1px solid var(--border); border-left: 3px solid var(--neutral); border-radius: 8px;
   font-size: 12.5px; line-height: 1.6; color: var(--text); }
 
+/* ---------- Hero 结论卡（顶部 AI 综合结论） ---------- */
+.hero { display: flex; gap: 22px; align-items: stretch; margin: 18px 0 4px;
+  background: linear-gradient(135deg, #11161f, #161b22 60%, #11161f);
+  border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; box-shadow: var(--shadow); }
+.hero-verdict { flex: 0 0 200px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-right: 1px solid var(--border); padding-right: 22px; text-align: center; }
+.hero-badge { font-size: 34px; font-weight: 800; padding: 8px 22px; border-radius: 12px; color: #fff; line-height: 1.1; }
+.hero-badge.bull { background: var(--bull); }
+.hero-badge.bear { background: var(--bear); }
+.hero-badge.neutral { background: var(--neutral); color: #111; }
+.hero-badge.unknown { background: #555; }
+.hero-score { margin-top: 10px; font-size: 14px; color: var(--text); font-weight: 600; }
+.hero-hint { margin-top: 4px; font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+.hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.hero-title { font-size: 12px; color: var(--accent); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+.hero-structural { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); }
+.hero-chips { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.chip.bull { background: rgba(239,75,75,.15); color: var(--bull); border: 1px solid rgba(239,75,75,.4); }
+.chip.bear { background: rgba(31,184,107,.15); color: var(--bear); border: 1px solid rgba(31,184,107,.4); }
+.chip.neutral { background: rgba(212,160,23,.15); color: var(--neutral); border: 1px solid rgba(212,160,23,.4); }
+
 /* ---------- 综合权重配置面板 ---------- */
 .weight-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 18px; }
 .wrow { display: flex; align-items: center; gap: 10px; }

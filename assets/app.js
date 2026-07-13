@@ -24,7 +24,7 @@
   function collectSeries() {
     const list = [];
     const m = DATA.markets;
-    ["us_stocks", "cn_stocks", "bonds"].forEach((k) => {
+    ["us_stocks", "cn_stocks", "bonds", "kr_stocks", "gold", "fx"].forEach((k) => {
       const mk = m[k];
       if (mk && mk.series) {
         mk.series.forEach((s) => list.push({ market: mk.label, name: s.name, s: s }));
@@ -64,14 +64,17 @@
     const cats = [
       { key: "us_stocks", label: "美股" },
       { key: "cn_stocks", label: "A股" },
+      { key: "kr_stocks", label: "韩股" },
       { key: "bonds", label: "债券" },
+      { key: "gold", label: "黄金" },
       { key: "sentiment", label: "情绪" },
       { key: "volatility", label: "波动率" },
       { key: "credit", label: "信用" },
       { key: "valuation", label: "估值" },
+      { key: "macro", label: "宏观" },
       { key: "volume", label: "量能" },
       { key: "breadth", label: "广度" },
-      { key: "macro", label: "宏观" },
+      { key: "yen_carry", label: "日元/套息" },
     ];
     const host = document.getElementById("gauges");
     // 先释放旧实例，避免 innerHTML 清空后 canvas 仍残留或 ECharts 内部 series 合并导致叠加
@@ -110,9 +113,9 @@
   }
 
   // ---------------- 综合权重配置面板 ----------------
-  const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", bonds: "债券",
-    sentiment: "情绪", volatility: "波动率", credit: "信用", valuation: "估值",
-    volume: "量能", breadth: "广度", macro: "宏观" };
+  const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", kr_stocks: "韩股", bonds: "债券",
+    gold: "黄金", sentiment: "情绪", volatility: "波动率", credit: "信用", valuation: "估值",
+    volume: "量能", breadth: "广度", macro: "宏观", yen_carry: "日元/套息" };
 
   function getDimScore(key) {
     const mk = DATA.markets[key];
@@ -172,6 +175,7 @@
         wmap[k] = (+rng.value) / 100;
         currentWeights = Object.assign({}, wmap);
         renderOverall(currentWeights);
+        renderHero();
         updateWeightNote(dims, wmap);
         clearTimeout(weightSaveTimer);
         weightSaveTimer = setTimeout(() => {
@@ -196,6 +200,45 @@
 
     updateWeightNote(dims, wmap);
     renderOverall(currentWeights);
+  }
+
+  // ---------------- Hero 结论卡（顶部 AI 综合结论） ----------------
+  function renderHero() {
+    const hero = document.getElementById("hero");
+    if (!hero) return;
+    const ov = computeOverall(currentWeights);
+    const badge = document.getElementById("heroBadge");
+    if (badge) {
+      badge.className = "hero-badge " + ov.verdict;
+      badge.textContent = VERDICT_TEXT[ov.verdict];
+    }
+    const sc = document.getElementById("heroScore");
+    if (sc) sc.textContent = "综合分 " + Math.round(ov.score * 100) + " · " + (ov.score >= 0 ? "偏多" : "偏空");
+    const st = document.getElementById("heroStructural");
+    if (st && DATA.structural_signal) st.textContent = DATA.structural_signal;
+    const chips = document.getElementById("heroChips");
+    if (chips) {
+      const m = DATA.markets;
+      const order = ["us_stocks", "cn_stocks", "kr_stocks", "bonds", "gold",
+        "sentiment", "volatility", "credit", "valuation", "macro", "volume", "breadth", "yen_carry"];
+      const items = [];
+      order.forEach((k) => {
+        const mk = m[k]; if (!mk) return;
+        let s = mk.score;
+        if (k === "macro" && mk.detail) {
+          const parts = Object.values(mk.detail).map((x) => x.score);
+          s = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+        }
+        if (s == null) return;
+        if (Math.abs(s) >= 0.15) items.push({ label: WEIGHT_LABELS[k] || k, score: s });
+      });
+      items.sort((a, b) => b.score - a.score);
+      chips.innerHTML = items.length ? items.map((it) => {
+        const v = it.score >= 0 ? "bull" : "bear";
+        const sign = it.score >= 0 ? "+" : "";
+        return '<span class="chip ' + v + '">' + it.label + " " + sign + Math.round(it.score * 100) + "</span>";
+      }).join("") : '<span class="chip neutral">各维度均处中性区间</span>';
+    }
   }
 
   let weightSaveTimer = null;
@@ -445,6 +488,7 @@
       renderTable();
       renderParadigm();
       renderWeightPanel();
+      renderHero();
     })
     .catch((e) => {
       document.getElementById("gauges").innerHTML =
