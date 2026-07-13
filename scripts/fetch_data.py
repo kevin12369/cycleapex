@@ -396,6 +396,41 @@ def fetch_eastmoney_breadth():
         return None
 
 
+def fetch_us_breadth():
+    """美股广度代理：RSP(等权S&P500) vs SPY(市值权重)。
+    等权跑赢市值权重 => 宽度扩散(健康,偏牛)；等权落后 => 宽度收窄(偏熊)。
+    返回 {score, ratio_last, series} 或 None。best-effort。"""
+    rsp = fetch_yahoo("RSP", rng="6mo")
+    spy = fetch_yahoo("SPY", rng="6mo")
+    if not rsp or not spy:
+        return None
+    d_r = {d: c for d, c in zip(rsp["dates"], rsp["close"]) if c}
+    d_s = {d: c for d, c in zip(spy["dates"], spy["close"]) if c}
+    dates = sorted(set(d_r) & set(d_s))
+    if len(dates) < 22:
+        return None
+    ratio = [d_r[d] / d_s[d] for d in dates]
+    base = ratio[0]
+    norm = [x / base * 100 for x in ratio]
+    # 近 21 交易日(约1月)动量：等权相对市值的相对强弱
+    mom = norm[-1] / norm[-22] - 1 if len(norm) >= 22 else norm[-1] / norm[0] - 1
+    score = clamp(mom / 0.05)   # ±5% 月度动量 => ±1
+    ma20 = sma(norm, 20); ma60 = sma(norm, 60); ma200 = sma(norm, 200)
+    rsi_arr = rsi(norm, 14)
+    dif, dea, hist = macd(norm)
+    series = {
+        "name": "美股广度(等权/市值)", "symbol": "RSP/SPY", "dates": dates,
+        "open": list(norm), "high": list(norm), "low": list(norm), "close": list(norm),
+        "vol": [0] * len(norm),
+        "ma20": ma20, "ma60": ma60, "ma200": ma200,
+        "rsi": rsi_arr, "macd": dif, "macdSignal": dea, "macdHist": hist,
+        "volMa20": [0] * len(norm), "volScore": 0.0,
+        "latest": norm[-1], "score": round(score, 3),
+        "verdict": verdict_from_score(score),
+    }
+    return {"score": round(score, 3), "ratio_last": round(ratio[-1], 4), "series": series}
+
+
 # ----------------------------------------------------------------------------
 # 数据源：FRED 宏观
 # ----------------------------------------------------------------------------
@@ -602,17 +637,42 @@ def main():
                 heatmap.append(["量能", s["name"], round(s["volScore"], 3)])
         print(f"  [OK] 量能 综合 {vol_score}")
 
-    # ---------- 广度维度（A股全市场涨跌家数，东方财富聚合） ----------
-    br = fetch_eastmoney_breadth()
-    if br:
-        bs = breadth_score(br["up"], br["down"], br["flat"])
-        add_dim("breadth", "广度", bs, verdict_from_score(bs),
-                f"涨{br['up']}/跌{br['down']}/平{br['flat']}",
-                {"up": br["up"], "down": br["down"], "flat": br["flat"]})
-        heatmap.append(["广度", "A股涨跌家数", round(bs, 3)])
-        print(f"  [OK] 广度 涨{br['up']}/跌{br['down']} 分 {bs}")
+    # ---------- 广度维度（跨市场：A股涨跌家数 + 美股等权-市值差） ----------
+    ab = fetch_eastmoney_breadth()
+    ub = fetch_us_breadth()
+    br_a = breadth_score(ab["up"], ab["down"], ab["flat"]) if ab else None
+    br_us = ub["score"] if ub else None
+    if ab:
+        print(f"  [OK] A股广度 涨{ab['up']}/跌{ab['down']}/平{ab['flat']} 分 {br_a}")
     else:
-        print("  [SKIP] A股广度抓取失败（东方财富代理可达性，不影响其余维度）")
+        print("  [WARN] A股广度抓取失败（东方财富可达性）")
+    if br_us is not None:
+        print(f"  [OK] 美股广度(等权-市值) 分 {br_us} 比率 {ub['ratio_last']}")
+    else:
+        print("  [WARN] 美股广度抓取失败（Yahoo RSP/SPY）")
+
+    if br_a is not None or br_us is not None:
+        # 跨市场等权复合：A股单日A/D + 美股1月动量（等权相对市值）
+        bs = (round(0.5 * br_a + 0.5 * br_us, 3)
+              if (br_a is not None and br_us is not None) else (br_a if br_us is None else br_us))
+        sub = []
+        if br_a is not None:
+            sub.append(f"A股涨{ab['up']}/跌{ab['down']}")
+        if br_us is not None:
+            sub.append(f"美股等权-市值 {br_us}")
+        extra = {"up": ab["up"] if ab else None, "down": ab["down"] if ab else None,
+                 "flat": ab["flat"] if ab else None,
+                 "us_score": br_us, "us_ratio": (ub["ratio_last"] if ub else None)}
+        if ub and ub.get("series"):
+            extra["series"] = [ub["series"]]
+        add_dim("breadth", "广度", bs, verdict_from_score(bs), "；".join(sub), extra)
+        if br_a is not None:
+            heatmap.append(["广度", "A股涨跌家数", round(br_a, 3)])
+        if br_us is not None:
+            heatmap.append(["广度", "美股等权-市值", round(br_us, 3)])
+        print(f"  [OK] 广度综合 分 {bs}")
+    else:
+        print("  [SKIP] 广度抓取失败（A股+美股均不可达）")
 
     # ---------- 债券维度（美债10Y + 中债10Y） ----------
     bond_series = []
@@ -861,7 +921,7 @@ def main():
             "fx": "Yahoo Finance JPY=X",
             "fng": "feargreedchart.com",
             "valuation": "multpl.com (Shiller CAPE / 盈利收益率)",
-            "breadth": "东方财富 push2 全市场涨跌家数 (best-effort)",
+            "breadth": "东方财富 push2 全市场涨跌家数 + Yahoo RSP/SPY 等权-市值差 (best-effort)",
             "credit_curve_macro": ("FRED (BAMLH0A0HYM2 / T10Y2Y / CPI / UNRATE / GDP)"
                                    if FRED_KEY else "未配置 FRED_KEY"),
         },
@@ -880,7 +940,7 @@ def main():
                 "信用维度 HY利差收窄=偏牛、曲线倒挂=偏熊",
                 "估值维度 CAPE 越高越贵(未来回报预期越低)、ERP 越高股票越具吸引力",
                 "量能维度 = 价涨且放量→配合(正)、价跌且放量→派发(负)，跨美股/A股聚合",
-                "广度维度 = (涨家数-跌家数)/(涨+跌+平)，反映全市场宽度而非指数被权重股绑架",
+                "广度维度 = 跨市场复合：A股(涨家数-跌家数)/(涨+跌+平) 等权 0.5 + 美股等权ETF(RSP)对市值ETF(SPY)的月度动量(等权跑赢=宽度扩散)，各0.5",
                 "综合分 = 各维度分按权重加权，并对「实际可用维度」归一化（未配置源自动剔除）",
                 "结构层：引入 Carlota Pérez 技术-经济范式周期，叠加广度/量能背离校验，作为战术牛熊之上的制度背景",
                 "韩国 KOSPI：高 Beta、半导体/出口敏感市场，作全球风险与 AI 硬件周期领先指标（kr_stocks）",
