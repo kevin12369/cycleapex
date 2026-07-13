@@ -175,9 +175,9 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
   .hero-chips { margin-top: 8px; gap: 6px; }
   .chip { font-size: 11px; padding: 2px 9px; }
 
-  /* 仪表盘：单列展示，避免挤压 */
-  .gauges { grid-template-columns: 1fr !important; gap: 10px; }
-  .gauge { height: 130px; }
+  /* 仪表盘：两列并排（每张卡片紧凑，单列太浪费） */
+  .gauges { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+  .gauge { height: 118px; }
   .card { padding: 10px; border-radius: 10px; }
 
   /* 控件区：选择框整行、区间按钮均分 */
