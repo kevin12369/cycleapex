@@ -202,6 +202,21 @@
     renderOverall(currentWeights);
   }
 
+  // 维度口语化风险提示（Hero 卡用：把分值翻译成更直白的风险/顺风话术）
+  function verbalHint(key, s) {
+    if (key === "yen_carry") {
+      if (s >= 0.15) return "日元套息顺畅·risk-on";
+      if (s <= -0.15) return "套息平仓预警·risk-off";
+      return "套息中性";
+    }
+    if (key === "gold") {
+      if (s >= 0.15) return "避险升温·金价强";
+      if (s <= -0.15) return "避险退潮·金价弱";
+      return "金价中性";
+    }
+    return null;
+  }
+
   // ---------------- Hero 结论卡（顶部 AI 综合结论） ----------------
   function renderHero() {
     const hero = document.getElementById("hero");
@@ -230,13 +245,13 @@
           s = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
         }
         if (s == null) return;
-        if (Math.abs(s) >= 0.15) items.push({ label: WEIGHT_LABELS[k] || k, score: s });
+        if (Math.abs(s) >= 0.15) items.push({ label: WEIGHT_LABELS[k] || k, score: s, verbal: verbalHint(k, s) });
       });
       items.sort((a, b) => b.score - a.score);
       chips.innerHTML = items.length ? items.map((it) => {
         const v = it.score >= 0 ? "bull" : "bear";
-        const sign = it.score >= 0 ? "+" : "";
-        return '<span class="chip ' + v + '">' + it.label + " " + sign + Math.round(it.score * 100) + "</span>";
+        const text = it.verbal || (it.label + " " + (it.score >= 0 ? "+" : "") + Math.round(it.score * 100));
+        return '<span class="chip ' + v + '">' + text + "</span>";
       }).join("") : '<span class="chip neutral">各维度均处中性区间</span>';
     }
   }
