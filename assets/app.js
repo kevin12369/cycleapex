@@ -435,13 +435,13 @@
     heatChart.setOption({
       backgroundColor: "transparent",
       grid: { left: 72, right: 60, top: 30, bottom: 26 },
-      // 整体顶部多/空方向提示（左红=空，右绿=多）
+      // 整体顶部多/空方向提示（中国惯例：多=红·涨 / 空=绿·跌）
       graphic: [
         { type: "text", left: "14%", top: 6,
-          style: { text: "◀ 空", fill: "#ff7b72", fontSize: 13, fontWeight: 700,
+          style: { text: "◀ 空", fill: COLORS.bear, fontSize: 13, fontWeight: 700,
             textAlign: "center" } },
         { type: "text", right: "14%", top: 6,
-          style: { text: "多 ▶", fill: "#7ee787", fontSize: 13, fontWeight: 700,
+          style: { text: "多 ▶", fill: COLORS.bull, fontSize: 13, fontWeight: 700,
             textAlign: "center" } }
       ],
       tooltip: {
@@ -479,11 +479,11 @@
       series: [
         { name: "偏空", type: "bar", stack: "t", data: neg, barWidth: "56%",
           itemStyle: { color: COLORS.bear },
-          label: { show: true, position: "left", color: "#ff7b72", fontSize: 11,
+          label: { show: true, position: "left", color: COLORS.bear, fontSize: 11,
             formatter: (p) => (p.value < 0 ? Math.round(p.value * 100) : "") } },
         { name: "偏多", type: "bar", stack: "t", data: pos, barWidth: "56%",
           itemStyle: { color: COLORS.bull },
-          label: { show: true, position: "right", color: "#7ee787", fontSize: 11,
+          label: { show: true, position: "right", color: COLORS.bull, fontSize: 11,
             formatter: (p) => (p.value > 0 ? "+" + Math.round(p.value * 100) : "") },
           markLine: { silent: true, symbol: "none",
             lineStyle: { color: "#6e7681", type: "dashed", width: 1 },
