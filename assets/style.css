@@ -51,6 +51,7 @@ header.topbar {
 }
 .card h3 { margin: 0 0 4px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
 .card .sub { color: var(--muted); font-size: 12px; }
+.card p.sub { margin: 0 0 14px; line-height: 1.5; }
 .gauge { width: 100%; height: 150px; }
 
 .layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }

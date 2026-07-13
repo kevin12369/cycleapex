@@ -434,7 +434,16 @@
 
     heatChart.setOption({
       backgroundColor: "transparent",
-      grid: { left: 72, right: 60, top: 14, bottom: 26 },
+      grid: { left: 72, right: 60, top: 30, bottom: 26 },
+      // 整体顶部多/空方向提示（左红=空，右绿=多）
+      graphic: [
+        { type: "text", left: "14%", top: 6,
+          style: { text: "◀ 空", fill: "#ff7b72", fontSize: 13, fontWeight: 700,
+            textAlign: "center" } },
+        { type: "text", right: "14%", top: 6,
+          style: { text: "多 ▶", fill: "#7ee787", fontSize: 13, fontWeight: 700,
+            textAlign: "center" } }
+      ],
       tooltip: {
         trigger: "item",
         formatter: (p) => {
