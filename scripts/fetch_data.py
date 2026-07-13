@@ -566,10 +566,12 @@ def main():
         us10y = build_series("美债10Y", "^TNX", us10y_raw, invert=True)
         print(f"  [OK] 美债10Y 分 {us10y['score']}")
 
-    # ---------- A股（东方财富优先，失败回退 Yahoo .SS） ----------
+    # ---------- A股（东方财富优先，失败回退 Yahoo；含科技成长指数） ----------
     cn_series = []
     for secid, yh, nm in (("1.000001", "000001.SS", "上证指数"),
-                         ("1.000300", "000300.SS", "沪深300")):
+                         ("1.000300", "000300.SS", "沪深300"),
+                         ("1.000688", "000688.SS", "科创50"),
+                         ("0.399006", "399006.SZ", "创业板指")):
         raw = fetch_eastmoney_kline(secid)
         if raw is None:
             raw = fetch_yahoo(yh)   # 多源容错：东财不可达时回退
@@ -588,7 +590,7 @@ def main():
     if cn_series:
         cn_score = round(sum(s["score"] for s in cn_series) / len(cn_series), 3)
         add_dim("cn_stocks", "A股", cn_score, verdict_from_score(cn_score),
-                "上证/沪深300综合", {"series": cn_series})
+                "上证/沪深300/科创50/创业板指综合", {"series": cn_series})
 
     # ---------- 量能维度（价量配合，跨市场聚合） ----------
     all_vol = [s["volScore"] for s in (us_series + cn_series) if s.get("volScore") is not None]
