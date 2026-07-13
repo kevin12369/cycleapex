@@ -395,96 +395,92 @@
     }, true);
   }
 
-  // ---------------- 牛熊雷达图（市场指纹）----------------
+  // ---------------- 牛熊维度分条图（横向条形，可缩放）----------------
+  function scoreColor(s) {
+    return s >= 0.15 ? COLORS.bull : (s <= -0.15 ? COLORS.bear : COLORS.neutral);
+  }
   function renderHeatmap() {
-    const m = DATA.markets;
-    if (!m || !Object.keys(m).length) {
+    const mk = DATA.markets || {};
+    let dims = Object.keys(mk).map((k) => {
+      const m = mk[k];
+      return { key: k, label: WEIGHT_LABELS[k] || m.label || k,
+        score: typeof m.score === "number" ? m.score : 0,
+        verdict: m.verdict, sub: m.sub || "", series: m.series || [] };
+    });
+    if (!dims.length) {
       heatChart.setOption({ title: { text: "暂无维度数据", left: "center", top: "center",
         textStyle: { color: "#8b949e" } } });
       return;
     }
-    const order = ["us_stocks", "cn_stocks", "kr_stocks", "bonds", "gold",
-      "sentiment", "volatility", "credit", "valuation", "macro", "volume", "breadth", "yen_carry"];
-    const indicators = [];
-    const values = [];
-    const subMap = {};  // 收集子指标用于 tooltip
-    order.forEach((k) => {
-      const mk = m[k]; if (!mk) return;
-      const label = WEIGHT_LABELS[k] || k;
-      indicators.push({ name: label, max: 100, min: 0,
-        axisLabel: { color: "#8b949e", fontSize: 11 },
-        splitLine: { lineStyle: { color: "#21262d" } },
-        splitArea: { areaStyle: { color: ["rgba(22,27,34,.3)", "rgba(13,17,23,.5)"] } }
+    // 按综合分从高到低排序（最偏牛在顶，最偏熊在底）
+    dims.sort((a, b) => b.score - a.score);
+
+    // 从 heatmap 收集每个维度的子指标，用于行内微点 + tooltip
+    const subMap = {};
+    (DATA.heatmap || []).forEach(([g, nm, sc]) => {
+      (subMap[g] = subMap[g] || []).push({ name: nm, score: sc });
+    });
+
+    const cats = dims.map((d) => d.label);
+    const pos = dims.map((d) => Math.max(0, d.score));   // 偏多部分（向右）
+    const neg = dims.map((d) => Math.min(0, d.score));   // 偏空部分（向左）
+    const dotData = [];
+    dims.forEach((d, i) => {
+      (subMap[d.label] || []).forEach((s) => {
+        dotData.push({ value: [s.score, i], name: s.name,
+          itemStyle: { color: scoreColor(s.score) } });
       });
-      let s = mk.score;
-      if (k === "macro" && mk.detail) {
-        const parts = Object.values(mk.detail).map((x) => x.score);
-        s = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-      }
-      if (s == null) s = 0;
-      // 映射 [-100,+100] → [0,100]，50=中性零线
-      const v = Math.max(0, Math.min(100, Math.round((s * 100) + 50)));
-      values.push(v);
-      // 子指标摘要
-      const subs = [];
-      if (mk.series) {
-        mk.series.forEach((sr) => {
-          if (sr.score != null) subs.push(sr.name + " " + (sr.score >= 0 ? "+" : "") + Math.round(sr.score * 100));
-        });
-      }
-      if (mk.sub) subs.push("综合 " + (s >= 0 ? "+" : "") + Math.round(s * 100));
-      subMap[label] = { score: s, verdict: mk.verdict, subs };
     });
 
     heatChart.setOption({
       backgroundColor: "transparent",
+      grid: { left: 72, right: 60, top: 14, bottom: 26 },
       tooltip: {
         trigger: "item",
         formatter: (p) => {
-          const info = subMap[p.name];
-          if (!info) return p.name;
-          const vh = verbalHint(order[indicators.findIndex(i => i.name === p.name)], info.score);
-          const vText = vh || "";
-          return `<b style="color:#c9d1d9">${p.name}</b> ${vText}<br/>` +
-            `综合分：${(info.score >= 0 ? "+" : "") + Math.round(info.score * 100)} · ${VERDICT_TEXT[info.verdict] || ""}` +
-            (info.subs.length ? `<br/><span style="color:#6e7681;font-size:11px">${info.subs.join(" / ")}</span>` : "");
+          if (p.seriesType === "scatter") {
+            return `${p.data.name}<br/>子指标得分：${Math.round(p.data.value[0] * 100)}`;
+          }
+          const d = dims[p.dataIndex];
+          const hint = verbalHint(d.key, d.score) || "";
+          let html = `<b style="color:#c9d1d9">${d.label}</b> ${VERDICT_TEXT[d.verdict] || ""}<br/>` +
+            `综合分：${(d.score >= 0 ? "+" : "") + Math.round(d.score * 100)}`;
+          if (hint) html += `<br/><span style="color:#8b949e;font-size:11px">${hint}</span>`;
+          const subs = subMap[d.label] || [];
+          if (subs.length) {
+            html += `<br/><span style="color:#6e7681;font-size:11px">子指标：` +
+              subs.map((s) => `${s.name} ${Math.round(s.score * 100)}`).join(" / ") + `</span>`;
+          }
+          return html;
         }
       },
-      radar: { indicator: indicators,
-        shape: "polygon",
-        axisName: { color: "#8b949e", fontSize: 12 },
-        splitNumber: 4,
-        splitLine: { lineStyle: { color: "#21262d", width: 0.5 } },
-        splitArea: { show: true,
-          areaStyle: { color: [
-            "rgba(22,27,34,.25)", "rgba(22,27,34,.18)",
-            "rgba(13,17,23,.15)", "rgba(13,17,23/.12)"
-          ] }
-        },
-        axisLine: { lineStyle: { color: "#30363d", width: 0.5 } }
+      xAxis: {
+        type: "value", min: -1.1, max: 1.1,
+        axisLabel: { color: "#8b949e", fontSize: 11,
+          formatter: (v) => (v > 0 ? "+" + v : "" + v) },
+        splitLine: { lineStyle: { color: "#21262d" } },
+        axisLine: { lineStyle: { color: "#30363d" } }
       },
-      series: [{
-        type: "radar",
-        data: [{
-          value: values,
-          name: "当前市场",
-          symbol: "circle",
-          symbolSize: 5,
-          itemStyle: { color: "#3fb950", borderColor: "#161b22", borderWidth: 1.5 },
-          areaStyle: { color: "rgba(35,134,54,0.18)" },
-          lineStyle: { color: "#3fb950", width: 1.5, opacity: 0.8 }
-        }],
-        // 中性零线（参考环，radius=50 对应 score=0）
-        silent: true
-      }],
-      graphic: [
-        // 零线标注
-        { type: "text", left: "center", top: "48%",
-          style: { text: "中性", fill: "#484f58", fontSize: 10, textAlign: "center" } },
-        { type: "text", left: "center", top: "10%",
-          style: { text: "偏牛", fill: "#3fb950", fontSize: 10, textAlign: "center" } },
-        { type: "text", left: "center", bottom: "8%",
-          style: { text: "偏熊", fill: "#f85149", fontSize: 10, textAlign: "center" } }
+      yAxis: {
+        type: "category", data: cats, inverse: true,
+        axisLabel: { color: "#c9d1d9", fontSize: 12 },
+        axisLine: { lineStyle: { color: "#30363d" } },
+        axisTick: { show: false }
+      },
+      series: [
+        { name: "偏空", type: "bar", stack: "t", data: neg, barWidth: "56%",
+          itemStyle: { color: COLORS.bear },
+          label: { show: true, position: "left", color: "#ff7b72", fontSize: 11,
+            formatter: (p) => (p.value < 0 ? Math.round(p.value * 100) : "") } },
+        { name: "偏多", type: "bar", stack: "t", data: pos, barWidth: "56%",
+          itemStyle: { color: COLORS.bull },
+          label: { show: true, position: "right", color: "#7ee787", fontSize: 11,
+            formatter: (p) => (p.value > 0 ? "+" + Math.round(p.value * 100) : "") },
+          markLine: { silent: true, symbol: "none",
+            lineStyle: { color: "#6e7681", type: "dashed", width: 1 },
+            data: [{ xAxis: 0 }], label: { show: false } } },
+        { name: "子指标", type: "scatter", data: dotData, symbolSize: 7, z: 5,
+          tooltip: { show: true } }
       ]
     }, true);
   }
