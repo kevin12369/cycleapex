@@ -203,18 +203,48 @@
   }
 
   // 维度口语化风险提示（Hero 卡用：把分值翻译成更直白的风险/顺风话术）
+  // 全维度口语化风险提示（纯中文大白话，不再用英文风险术语）
   function verbalHint(key, s) {
-    if (key === "yen_carry") {
-      if (s >= 0.15) return "日元套息顺畅·risk-on";
-      if (s <= -0.15) return "套息平仓预警·risk-off";
-      return "套息中性";
-    }
-    if (key === "gold") {
-      if (s >= 0.15) return "避险升温·金价强";
-      if (s <= -0.15) return "避险退潮·金价弱";
-      return "金价中性";
-    }
-    return null;
+    const POS = {
+      us_stocks: "美股多头正酣·纳指领着冲",
+      cn_stocks: "A股暖意上来·资金愿意买",
+      kr_stocks: "韩股带情绪·半导体在躁动",
+      bonds: "债市回暖·收益率往下走",
+      gold: "金价狂飙·避险资金抱团",
+      sentiment: "情绪上头·贪婪盖过恐惧",
+      volatility: "波动睡着·市场岁月静好",
+      credit: "信用利差收窄·钱愿意借",
+      valuation: "估值还便宜·安全垫厚",
+      macro: "宏观暖风·数据超预期",
+      volume: "量能放大·资金在进场",
+      breadth: "宽度铺开·个股普涨",
+      yen_carry: "套息顺风顺水·资金敢冲",
+    };
+    const NEG = {
+      us_stocks: "美股在掉头·小心回撤",
+      cn_stocks: "A股还阴着·抛压没散",
+      kr_stocks: "韩股在泄气·风险偏好退",
+      bonds: "债市承压·收益率往上拱",
+      gold: "金价趴窝·避险盘撤退",
+      sentiment: "情绪慌了·恐惧占上风",
+      volatility: "波动炸了·恐慌指数抬头",
+      credit: "信用在裂·利差走阔",
+      valuation: "估值偏贵·小心挤泡沫",
+      macro: "宏观转冷·数据在走弱",
+      volume: "量能萎缩·有人在派发",
+      breadth: "宽度塌了·涨的只是权重",
+      yen_carry: "套息在拆仓·赶紧系安全带",
+    };
+    const MID = {
+      us_stocks: "美股原地打转", cn_stocks: "A股不上不下", kr_stocks: "韩股观望",
+      bonds: "债市横着", gold: "金价没方向", sentiment: "情绪半对半",
+      volatility: "波动不咸不淡", credit: "信用平稳", valuation: "估值不便宜也不离谱",
+      macro: "宏观不温不火", volume: "量能平平", breadth: "宽度一般",
+      yen_carry: "套息不温不火",
+    };
+    if (s >= 0.15) return POS[key] || null;
+    if (s <= -0.15) return NEG[key] || null;
+    return MID[key] || null;
   }
 
   // ---------------- Hero 结论卡（顶部 AI 综合结论） ----------------
@@ -250,7 +280,8 @@
       items.sort((a, b) => b.score - a.score);
       chips.innerHTML = items.length ? items.map((it) => {
         const v = it.score >= 0 ? "bull" : "bear";
-        const text = it.verbal || (it.label + " " + (it.score >= 0 ? "+" : "") + Math.round(it.score * 100));
+        const num = (it.score >= 0 ? "+" : "") + Math.round(it.score * 100);
+        const text = it.verbal ? (it.verbal + " " + num) : (it.label + " " + num);
         return '<span class="chip ' + v + '">' + text + "</span>";
       }).join("") : '<span class="chip neutral">各维度均处中性区间</span>';
     }
