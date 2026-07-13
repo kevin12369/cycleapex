@@ -575,6 +575,7 @@
   }
 
   // ---------------- 启动 ----------------
+  const isFileProtocol = location.protocol === "file:";
   fetch("./data/market.json", { cache: "no-store" })
     .then((r) => r.json())
     .then((d) => {
@@ -597,7 +598,15 @@
       renderHero();
     })
     .catch((e) => {
-      document.getElementById("gauges").innerHTML =
-        '<div class="empty">数据加载失败：' + e + '（请确认 data/market.json 已生成）</div>';
+      let msg;
+      if (isFileProtocol) {
+        msg = "检测到你正以 <code>file://</code> 方式直接打开本页，浏览器出于安全策略会禁止 <code>fetch</code> 读取本地 JSON。<br/><br/>" +
+              "请改用本地 HTTP 服务访问（服务已在本地运行）：<br/>" +
+              '<b style="font-size:15px">http://127.0.0.1:8765/</b><br/><br/>' +
+              "若服务未启动，在该目录执行：<code>python -m http.server 8765</code> 后刷新本地址。";
+      } else {
+        msg = "数据加载失败：" + e + "（请确认 data/market.json 已生成，或检查网络/CDN 是否可达）";
+      }
+      document.getElementById("gauges").innerHTML = '<div class="empty" style="line-height:1.8">' + msg + "</div>";
     });
 })();
