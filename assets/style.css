@@ -141,22 +141,66 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
 
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* ---------- 移动端响应式 ---------- */
-@media (max-width: 720px) {
-  .wrap { padding: 14px; }
-  .brand h1 { font-size: 17px; }
-  .brand p { font-size: 11px; }
-  .topbar .meta { text-align: left; margin-top: 8px; }
-  header.topbar { padding: 14px 16px; }
-  table.detail th, table.detail td { padding: 7px 8px; font-size: 12px; white-space: nowrap; }
-  #klineChart { height: 320px; }
-  #indicatorChart { height: 170px; }
-  #heatmapChart { height: 330px; }
-  .gauge { height: 140px; }
-  .section-title { font-size: 12px; letter-spacing: .5px; }
+/* ---------- 响应式：平板 / 手机 ---------- */
+/* 平板及以下：K线 + 分条图 改为上下堆叠（.layout 已在 980px 断点处理） */
+
+/* 平板（含小平板竖屏） */
+@media (max-width: 900px) {
+  .wrap { padding: 18px; }
+  #klineChart { height: 360px; }
+  #indicatorChart { height: 180px; }
+  #heatmapChart { height: 400px; }            /* 13 维度需更高，避免行被压扁 */
+  .gauges { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+  .gauge { height: 132px; }
+  .section-title { font-size: 12.5px; }
 }
-@media (max-width: 460px) {
-  .controls { gap: 6px; }
-  .controls select, .controls .btn { font-size: 12px; padding: 6px 8px; }
+
+/* 大手机 */
+@media (max-width: 600px) {
+  header.topbar { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px; }
+  .topbar .meta { text-align: left; margin-top: 0; }
+  .brand h1 { font-size: 18px; }
+  .brand p { font-size: 11px; }
+
+  /* Hero 卡：纵向堆叠（判定在上、结论在下），去掉竖向分隔线 */
+  .hero { flex-direction: column; gap: 14px; padding: 18px 16px; align-items: stretch; }
+  .hero-verdict { flex: none; border-right: none; border-bottom: 1px solid var(--border);
+    padding: 0 0 14px; }
+  .hero-badge { font-size: 28px; padding: 6px 18px; }
+  .hero-structural { font-size: 13px; line-height: 1.6; }
+  .hero-chips { margin-top: 10px; }
+
+  /* 控件区：选择框整行、区间按钮均分、隐藏 flex 占位 spacer */
+  .controls { gap: 8px; }
+  .controls select { flex: 1 1 100%; }
+  .controls > div { display: none; }
+  .controls .btn.range { flex: 1 1 auto; text-align: center; }
+
+  #klineChart { height: 320px; }
+  #heatmapChart { height: 430px; }
+  .gauge { height: 124px; }
+
+  /* 权重面板：单列 */
   .weight-rows { grid-template-columns: 1fr; }
+  .wlab { width: 48px; }
+
+  /* 明细表：隐藏次要指标列（均线/RSI/MACD/量能），减少横向滚动 */
+  table.detail th:nth-child(n+6),
+  table.detail td:nth-child(n+6) { display: none; }
+  table.detail th, table.detail td { padding: 7px 8px; font-size: 12px; white-space: nowrap; }
+
+  /* Pérez 时间线：卡片更紧凑，横滑更顺 */
+  .rev { min-width: 104px; padding: 9px 10px; }
+  .rev-name { font-size: 12px; }
+  .rev-tech { font-size: 10.5px; }
+}
+
+/* 小手机 */
+@media (max-width: 380px) {
+  .brand h1 { font-size: 16px; }
+  .hero-badge { font-size: 24px; }
+  #klineChart { height: 280px; }
+  #heatmapChart { height: 460px; }
+  .controls .btn.range { padding: 7px 6px; font-size: 12px; }
+  table.detail th, table.detail td { padding: 6px 6px; font-size: 11px; }
 }
