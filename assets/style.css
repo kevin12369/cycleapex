@@ -40,7 +40,7 @@ header.topbar {
 .badge.neutral { background: var(--neutral); color: #111; }
 .badge.unknown { background: #555; }
 
-.wrap { max-width: 1280px; margin: 0 auto; padding: 22px; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 16px 18px; }
 
 .section-title { font-size: 14px; color: var(--muted); margin: 26px 0 12px; text-transform: uppercase; letter-spacing: 1px; }
 
@@ -54,8 +54,9 @@ header.topbar {
 .card p.sub { margin: 0 0 14px; line-height: 1.5; }
 .gauge { width: 100%; height: 150px; }
 
-.layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+.layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* 平板及以下：K线 + 分条图 改为上下堆叠，等宽（各占满一行） */
+@media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
 
 .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
 select, .btn {
@@ -142,65 +143,83 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* ---------- 响应式：平板 / 手机 ---------- */
-/* 平板及以下：K线 + 分条图 改为上下堆叠（.layout 已在 980px 断点处理） */
 
-/* 平板（含小平板竖屏） */
+/* 平板（含小平板竖屏 ~600-1024px） */
 @media (max-width: 900px) {
-  .wrap { padding: 18px; }
-  #klineChart { height: 360px; }
-  #indicatorChart { height: 180px; }
-  #heatmapChart { height: 400px; }            /* 13 维度需更高，避免行被压扁 */
-  .gauges { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
-  .gauge { height: 132px; }
+  .wrap { padding: 14px 16px; }
+  #klineChart { height: 340px; }
+  #indicatorChart { height: 170px; }
+  #heatmapChart { height: 420px; }            /* 13 维度需更高，避免行被压扁 */
+  .gauges { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .gauge { height: 128px; }
   .section-title { font-size: 12.5px; }
+  .card { padding: 10px; }
 }
 
-/* 大手机 */
+/* 大手机（≤600px）：全面移动端优化 */
 @media (max-width: 600px) {
-  header.topbar { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px; }
+  .wrap { padding: 10px 12px; }              /* 更宽的内容区 */
+  header.topbar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
   .topbar .meta { text-align: left; margin-top: 0; }
-  .brand h1 { font-size: 18px; }
+  .brand h1 { font-size: 17px; letter-spacing: 0; }
   .brand p { font-size: 11px; }
 
-  /* Hero 卡：纵向堆叠（判定在上、结论在下），去掉竖向分隔线 */
-  .hero { flex-direction: column; gap: 14px; padding: 18px 16px; align-items: stretch; }
+  /* Hero 卡：纵向堆叠 */
+  .hero { flex-direction: column; gap: 12px; padding: 14px 14px; align-items: stretch; }
   .hero-verdict { flex: none; border-right: none; border-bottom: 1px solid var(--border);
-    padding: 0 0 14px; }
-  .hero-badge { font-size: 28px; padding: 6px 18px; }
-  .hero-structural { font-size: 13px; line-height: 1.6; }
-  .hero-chips { margin-top: 10px; }
+    padding: 0 0 12px; flex-direction: row; gap: 16px; justify-content: flex-start; }
+  .hero-badge { font-size: 26px; padding: 5px 16px; }
+  .hero-score { margin-top: 0; font-size: 13px; }
+  .hero-hint { margin-top: 0; font-size: 10px; }
+  .hero-structural { font-size: 12.5px; line-height: 1.6; }
+  .hero-chips { margin-top: 8px; gap: 6px; }
+  .chip { font-size: 11px; padding: 2px 9px; }
 
-  /* 控件区：选择框整行、区间按钮均分、隐藏 flex 占位 spacer */
-  .controls { gap: 8px; }
-  .controls select { flex: 1 1 100%; }
+  /* 仪表盘：单列展示，避免挤压 */
+  .gauges { grid-template-columns: 1fr !important; gap: 10px; }
+  .gauge { height: 130px; }
+  .card { padding: 10px; border-radius: 10px; }
+
+  /* 控件区：选择框整行、区间按钮均分 */
+  .controls { gap: 7px; margin-bottom: 8px; }
+  .controls select { flex: 1 1 100%; font-size: 13px; }
   .controls > div { display: none; }
-  .controls .btn.range { flex: 1 1 auto; text-align: center; }
+  .controls .btn.range { flex: 1 1 auto; text-align: center; font-size: 12px; padding: 7px 8px; }
 
-  #klineChart { height: 320px; }
-  #heatmapChart { height: 430px; }
-  .gauge { height: 124px; }
+  #klineChart { height: 290px; }
+  #indicatorChart { height: 160px; }
+  #heatmapChart { height: 440px; }
 
-  /* 权重面板：单列 */
-  .weight-rows { grid-template-columns: 1fr; }
-  .wlab { width: 48px; }
+  /* 权重面板：单列更紧凑 */
+  .weight-rows { grid-template-columns: 1fr; gap: 6px 14px; }
+  .wlab { width: 46px; font-size: 12px; }
+  .wval { width: 26px; font-size: 11px; }
 
-  /* 明细表：隐藏次要指标列（均线/RSI/MACD/量能），减少横向滚动 */
+  /* 明细表：隐藏次要指标列 */
   table.detail th:nth-child(n+6),
   table.detail td:nth-child(n+6) { display: none; }
-  table.detail th, table.detail td { padding: 7px 8px; font-size: 12px; white-space: nowrap; }
+  table.detail th, table.detail td { padding: 6px 7px; font-size: 11.5px; white-space: nowrap; }
 
-  /* Pérez 时间线：卡片更紧凑，横滑更顺 */
-  .rev { min-width: 104px; padding: 9px 10px; }
-  .rev-name { font-size: 12px; }
-  .rev-tech { font-size: 10.5px; }
+  /* Pérez 时间线：更紧凑 */
+  .rev { min-width: 100px; padding: 8px 9px; }
+  .rev-name { font-size: 11.5px; }
+  .rev-tech { font-size: 10px; }
+  .phase { padding: 8px 10px; }
+  .phase-name { font-size: 12px; }
+  .phase-desc { font-size: 10.5px; }
+
+  .section-title { margin: 20px 0 10px; font-size: 12px; }
 }
 
-/* 小手机 */
+/* 小手机（≤380px） */
 @media (max-width: 380px) {
-  .brand h1 { font-size: 16px; }
-  .hero-badge { font-size: 24px; }
-  #klineChart { height: 280px; }
-  #heatmapChart { height: 460px; }
-  .controls .btn.range { padding: 7px 6px; font-size: 12px; }
-  table.detail th, table.detail td { padding: 6px 6px; font-size: 11px; }
+  .wrap { padding: 8px 10px; }
+  .brand h1 { font-size: 15px; }
+  .hero-badge { font-size: 22px; padding: 4px 14px; }
+  .hero-score { font-size: 12px; }
+  #klineChart { height: 260px; }
+  #heatmapChart { height: 480px; }
+  .controls .btn.range { padding: 6px 4px; font-size: 11px; }
+  table.detail th, table.detail td { padding: 5px 5px; font-size: 10.5px; }
+  .chip { font-size: 10px; padding: 2px 7px; }
 }
