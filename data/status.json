@@ -1,11 +1,11 @@
 {
   "status": "ok",
-  "generated_at": "2026-07-28T21:57:55Z",
+  "generated_at": "2026-07-29T00:52:31Z",
   "overall": {
-    "score": -0.113,
+    "score": -0.06,
     "verdict": "neutral"
   },
-  "dims_available": 11,
+  "dims_available": 13,
   "dims_total": 13,
   "note": "部分维度可能因未配置密钥/网络受限而缺失，已自动归一化"
 }
