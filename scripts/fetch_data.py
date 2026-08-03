@@ -21,6 +21,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 import datetime as dt
@@ -63,6 +64,22 @@ TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "").strip()
 # ----------------------------------------------------------------------------
 # 通用 HTTP 工具：指数退避 + 限流友好
 # ----------------------------------------------------------------------------
+_SECRET_RE = re.compile(
+    r"((?:api_key|apikey|token|key|access_token)=)([^&\s\"']+)", re.IGNORECASE
+)
+
+
+def mask_secrets(text):
+    """把日志里可能出现的密钥参数值打码，避免密钥泄漏到控制台/自动化日志。"""
+    if not text:
+        return text
+    s = _SECRET_RE.sub(r"\1***", str(text))
+    for secret in (FRED_KEY, TUSHARE_TOKEN):
+        if secret and len(secret) >= 8:
+            s = s.replace(secret, "***")
+    return s
+
+
 def http_get(url, params=None, headers=None, retries=3, timeout=20):
     last_err = None
     for attempt in range(retries):
@@ -81,7 +98,7 @@ def http_get(url, params=None, headers=None, retries=3, timeout=20):
         except Exception as e:  # noqa
             last_err = str(e)
             time.sleep((2 ** attempt) + 0.5)
-    print(f"  [WARN] 请求失败 {url}: {last_err}")
+    print(f"  [WARN] 请求失败 {mask_secrets(url)}: {mask_secrets(last_err)}")
     return None
 
 
