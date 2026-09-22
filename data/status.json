@@ -1,8 +1,8 @@
 {
   "status": "ok",
-  "generated_at": "2026-09-21T23:46:43Z",
+  "generated_at": "2026-09-22T23:24:47Z",
   "overall": {
-    "score": -0.048,
+    "score": 0.01,
     "verdict": "neutral"
   },
   "dims_available": 11,
