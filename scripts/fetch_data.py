@@ -20,6 +20,7 @@
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -340,12 +341,36 @@ def fetch_eastmoney_kline(secid, beg="20240101"):
             c.append(float(parts[2]))
             h.append(float(parts[3]))
             l.append(float(parts[4]))
-            vol.append(float(parts[5]))
+            vol.append(float(parts[5]) if parts[5] not in ("-", "", "None") else 0)
         return {"dates": dates,
                 "open": o, "high": h, "low": l, "close": c, "vol": [int(x) for x in vol]}
     except Exception as e:  # noqa
         print(f"  [WARN] 东财 K线解析 {secid} 失败: {e}")
         return None
+
+
+# 东财多市场 secid 映射：Yahoo 403 时用东财接管美股/海外指数/商品/汇率
+EM_SECID = {
+    "^GSPC": "100.SPX",    # 标普500
+    "^IXIC": "100.NDX",    # 纳斯达克100（近似纳指）
+    "^KS11": "100.KS11",   # 韩国KOSPI
+    "GC=F": "101.GC00Y",   # COMEX 黄金主力
+    "JPY=X": "133.USDJPY", # 美元兑日元
+}
+
+
+def fetch_quote(yahoo_symbol=None, em_secid=None, rng="1y"):
+    """多源容错抓取：东财优先（规避 Yahoo 403 IP 封禁），失败回退 Yahoo。
+    返回与 fetch_yahoo/fetch_eastmoney_kline 一致的 {dates,open,high,low,close,vol} 或 None。"""
+    if em_secid:
+        raw = fetch_eastmoney_kline(em_secid)
+        if raw and raw.get("close"):
+            return raw
+    if yahoo_symbol:
+        raw = fetch_yahoo(yahoo_symbol, rng=rng)
+        if raw:
+            return raw
+    return None
 
 
 def fetch_china_10y_yield():
@@ -585,7 +610,7 @@ def main():
     # ---------- 美股 ----------
     us_series = []
     for sym, nm in (("^GSPC", "标普500"), ("^IXIC", "纳斯达克")):
-        raw = fetch_yahoo(sym)
+        raw = fetch_quote(sym, EM_SECID.get(sym))
         if raw:
             s = build_series(nm, sym, raw)
             us_series.append(s)
@@ -713,20 +738,34 @@ def main():
         if cn10y_raw:
             heatmap.append(["债券", "中债10Y", bond_series[-1]["score"]])
 
-    # ---------- 波动率维度（VIX，免密钥） ----------
+    # ---------- 波动率维度（VIX 优先；Yahoo 403 时用标普已实现波动率代理） ----------
     vix_raw = fetch_yahoo("^VIX")
+    vix_val = None
+    vix_src = "VIX"
     if vix_raw:
         cl = [x for x in vix_raw["close"] if x is not None]
         if cl:
             vix_val = cl[-1]
-            vs = vix_score(vix_val)
-            regime = ("极端恐慌" if vix_val > 30 else "恐慌" if vix_val > 25 else
-                      "谨慎" if vix_val > 20 else "正常" if vix_val > 15 else "平静")
-            add_dim("volatility", "波动率", vs, verdict_from_score(vs),
-                    f"VIX {vix_val:.1f} · {regime}",
-                    {"vix": {"value": round(vix_val, 2), "regime": regime}})
-            heatmap.append(["风险", "VIX波动率", round(vs, 3)])
-            print(f"  [OK] 波动率 VIX {vix_val:.1f} 分 {vs} ({regime})")
+    if vix_val is None:
+        # 回退：标普500 近20日对数收益的已实现波动率(年化%)近似 VIX
+        spx_raw = fetch_quote("^GSPC", EM_SECID.get("^GSPC"))
+        if spx_raw:
+            cl = [x for x in spx_raw["close"] if x is not None]
+            if len(cl) >= 21:
+                rets = [math.log(cl[i] / cl[i - 1]) for i in range(len(cl) - 20, len(cl))]
+                mean = sum(rets) / len(rets)
+                var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+                vix_val = (var ** 0.5) * (252 ** 0.5) * 100
+                vix_src = "标普20日已实现波动率代理"
+    if vix_val is not None:
+        vs = vix_score(vix_val)
+        regime = ("极端恐慌" if vix_val > 30 else "恐慌" if vix_val > 25 else
+                  "谨慎" if vix_val > 20 else "正常" if vix_val > 15 else "平静")
+        add_dim("volatility", "波动率", vs, verdict_from_score(vs),
+                f"{vix_src} {vix_val:.1f} · {regime}",
+                {"vix": {"value": round(vix_val, 2), "regime": regime, "source": vix_src}})
+        heatmap.append(["风险", "VIX波动率", round(vs, 3)])
+        print(f"  [OK] 波动率 {vix_src} {vix_val:.1f} 分 {vs} ({regime})")
     else:
         print("  [SKIP] VIX 抓取失败")
 
@@ -836,7 +875,7 @@ def main():
         dims["macro"] = mscore   # 计入加权综合（修复：原仅写入 markets 未进 dims）
 
     # ---------- 韩国 KOSPI（全球风险 / 半导体周期领先指标，Yahoo 免密钥） ----------
-    ks_raw = fetch_yahoo("^KS11")
+    ks_raw = fetch_quote("^KS11", EM_SECID.get("^KS11"))
     if ks_raw:
         ks = build_series("韩国KOSPI", "^KS11", ks_raw)
         blk = series_indicators_block(ks)
@@ -851,7 +890,7 @@ def main():
         print("  [SKIP] KOSPI 抓取失败")
 
     # ---------- 黄金（避险/实际利率代理；按自身价格趋势计综合分，徽章即金价真实方向） ----------
-    gold_raw = fetch_yahoo("GC=F")
+    gold_raw = fetch_quote("GC=F", EM_SECID.get("GC=F"))
     if gold_raw:
         g = build_series("黄金", "GC=F", gold_raw)
         blk = series_indicators_block(g)
@@ -866,7 +905,7 @@ def main():
         print("  [SKIP] 黄金 抓取失败")
 
     # ---------- 日元套息交易（USD/JPY 动量 → 套息健康度） ----------
-    jpy_raw = fetch_yahoo("JPY=X")
+    jpy_raw = fetch_quote("JPY=X", EM_SECID.get("JPY=X"))
     if jpy_raw:
         cj = [x for x in jpy_raw["close"] if x is not None]
         fx_series = [build_series("美元兑日元", "JPY=X", jpy_raw)]
