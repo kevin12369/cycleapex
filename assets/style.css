@@ -120,6 +120,11 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
 .hero-badge.neutral { background: var(--neutral); color: #111; }
 .hero-badge.unknown { background: #555; }
 .hero-score { margin-top: 10px; font-size: 14px; color: var(--text); font-weight: 600; }
+.hero-split { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.hero-sub { font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+.hero-sub.bull { background: rgba(239,75,75,.15); color: var(--bull); border-color: rgba(239,75,75,.45); }
+.hero-sub.bear { background: rgba(31,184,107,.15); color: var(--bear); border-color: rgba(31,184,107,.45); }
+.hero-sub.neutral { background: rgba(212,160,23,.15); color: var(--neutral); border-color: rgba(212,160,23,.45); }
 .hero-hint { margin-top: 4px; font-size: 11px; color: var(--muted); letter-spacing: 1px; }
 .hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .hero-title { font-size: 12px; color: var(--accent); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }

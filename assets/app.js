@@ -259,6 +259,17 @@
     }
     const sc = document.getElementById("heroScore");
     if (sc) sc.textContent = "综合分 " + Math.round(ov.score * 100) + " · " + (ov.score >= 0 ? "偏多" : "偏空");
+    const split = document.getElementById("heroSplit");
+    if (split) {
+      const parts = [{ key: "cn_stocks", label: "🇨🇳 A股" }, { key: "us_stocks", label: "🇺🇸 美股" }];
+      split.innerHTML = parts.map(function (p) {
+        const s = getDimScore(p.key);
+        if (s == null) return '<span class="hero-sub neutral">' + p.label + ' 待数据</span>';
+        const v = s >= 0.33 ? "bull" : s <= -0.33 ? "bear" : "neutral";
+        const num = (s >= 0 ? "+" : "") + Math.round(s * 100);
+        return '<span class="hero-sub ' + v + '">' + p.label + ' ' + VERDICT_TEXT[v] + ' <b>' + num + '</b></span>';
+      }).join("");
+    }
     const st = document.getElementById("heroStructural");
     if (st && DATA.structural_signal) st.textContent = DATA.structural_signal;
     const chips = document.getElementById("heroChips");
