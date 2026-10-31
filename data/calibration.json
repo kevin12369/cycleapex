@@ -1,0 +1,277 @@
+{
+  "generated_at": "2026-10-31T14:55:55Z",
+  "years": 10,
+  "horizon_days": 21,
+  "dims_rebuilt": {
+    "us_stocks": {
+      "sub_series": 2,
+      "days": 2495
+    },
+    "cn_stocks": {
+      "sub_series": 4,
+      "days": 5280
+    },
+    "bonds": {
+      "sub_series": 1,
+      "days": 2493
+    }
+  },
+  "dims_missing": [
+    "kr_stocks",
+    "gold",
+    "sentiment",
+    "yen_carry"
+  ],
+  "note": "情绪维度（恐贪指数）无历史序列，长历史口径仅 6 维，权重按可用维度归一化；因此这里算出的 σ 会低于线上 7 维口径，不能直接照搬阈值。",
+  "targets": {
+    "标普500": {
+      "n_days": 2493,
+      "date_range": [
+        "2016-10-31",
+        "2026-10-01"
+      ],
+      "composite_sigma": 0.2809,
+      "composite_mean": 0.097,
+      "composite_min": -0.783,
+      "composite_max": 0.698,
+      "fixed_033_trigger_pct": 29.0,
+      "corr_with_fwd": -0.083,
+      "deciles": [
+        {
+          "bucket": 1,
+          "score_mean": -0.467,
+          "score_min": -0.783,
+          "score_max": -0.319,
+          "fwd_mean_pct": 0.74,
+          "win_rate_pct": 57.0,
+          "n": 249
+        },
+        {
+          "bucket": 2,
+          "score_mean": -0.223,
+          "score_min": -0.319,
+          "score_max": -0.126,
+          "fwd_mean_pct": 2.36,
+          "win_rate_pct": 75.9,
+          "n": 249
+        },
+        {
+          "bucket": 3,
+          "score_mean": -0.068,
+          "score_min": -0.125,
+          "score_max": -0.016,
+          "fwd_mean_pct": 2.07,
+          "win_rate_pct": 73.5,
+          "n": 249
+        },
+        {
+          "bucket": 4,
+          "score_mean": 0.029,
+          "score_min": -0.016,
+          "score_max": 0.072,
+          "fwd_mean_pct": 1.8,
+          "win_rate_pct": 75.5,
+          "n": 249
+        },
+        {
+          "bucket": 5,
+          "score_mean": 0.108,
+          "score_min": 0.073,
+          "score_max": 0.139,
+          "fwd_mean_pct": 1.1,
+          "win_rate_pct": 65.9,
+          "n": 249
+        },
+        {
+          "bucket": 6,
+          "score_mean": 0.173,
+          "score_min": 0.139,
+          "score_max": 0.206,
+          "fwd_mean_pct": 1.41,
+          "win_rate_pct": 70.7,
+          "n": 249
+        },
+        {
+          "bucket": 7,
+          "score_mean": 0.238,
+          "score_min": 0.207,
+          "score_max": 0.269,
+          "fwd_mean_pct": 0.88,
+          "win_rate_pct": 67.9,
+          "n": 249
+        },
+        {
+          "bucket": 8,
+          "score_mean": 0.297,
+          "score_min": 0.269,
+          "score_max": 0.327,
+          "fwd_mean_pct": 0.56,
+          "win_rate_pct": 67.5,
+          "n": 249
+        },
+        {
+          "bucket": 9,
+          "score_mean": 0.373,
+          "score_min": 0.327,
+          "score_max": 0.423,
+          "fwd_mean_pct": 1.01,
+          "win_rate_pct": 69.5,
+          "n": 249
+        },
+        {
+          "bucket": 10,
+          "score_mean": 0.506,
+          "score_min": 0.424,
+          "score_max": 0.698,
+          "fwd_mean_pct": -0.06,
+          "win_rate_pct": 69.0,
+          "n": 252
+        }
+      ],
+      "fixed_scan": [
+        {
+          "threshold": 0.2,
+          "bull": {
+            "n": 1026,
+            "share_pct": 41.2,
+            "fwd_mean_pct": 0.61,
+            "win_rate_pct": 68.1
+          },
+          "bear": {
+            "n": 400,
+            "share_pct": 16.0,
+            "fwd_mean_pct": 1.38,
+            "win_rate_pct": 63.5
+          },
+          "gap_pct": -0.77
+        },
+        {
+          "threshold": 0.25,
+          "bull": {
+            "n": 831,
+            "share_pct": 33.3,
+            "fwd_mean_pct": 0.43,
+            "win_rate_pct": 67.4
+          },
+          "bear": {
+            "n": 342,
+            "share_pct": 13.7,
+            "fwd_mean_pct": 1.11,
+            "win_rate_pct": 59.9
+          },
+          "gap_pct": -0.68
+        },
+        {
+          "threshold": 0.3,
+          "bull": {
+            "n": 615,
+            "share_pct": 24.7,
+            "fwd_mean_pct": 0.46,
+            "win_rate_pct": 68.8
+          },
+          "bear": {
+            "n": 273,
+            "share_pct": 11.0,
+            "fwd_mean_pct": 0.73,
+            "win_rate_pct": 56.4
+          },
+          "gap_pct": -0.27
+        },
+        {
+          "threshold": 0.33,
+          "bull": {
+            "n": 490,
+            "share_pct": 19.7,
+            "fwd_mean_pct": 0.47,
+            "win_rate_pct": 69.6
+          },
+          "bear": {
+            "n": 232,
+            "share_pct": 9.3,
+            "fwd_mean_pct": 0.67,
+            "win_rate_pct": 56.0
+          },
+          "gap_pct": -0.2
+        },
+        {
+          "threshold": 0.4,
+          "bull": {
+            "n": 317,
+            "share_pct": 12.7,
+            "fwd_mean_pct": 0.14,
+            "win_rate_pct": 67.8
+          },
+          "bear": {
+            "n": 148,
+            "share_pct": 5.9,
+            "fwd_mean_pct": 0.22,
+            "win_rate_pct": 51.4
+          },
+          "gap_pct": -0.08
+        },
+        {
+          "threshold": 0.5,
+          "bull": {
+            "n": 114,
+            "share_pct": 4.6,
+            "fwd_mean_pct": -1.54,
+            "win_rate_pct": 66.7
+          },
+          "bear": {
+            "n": 84,
+            "share_pct": 3.4,
+            "fwd_mean_pct": -0.58,
+            "win_rate_pct": 45.2
+          },
+          "gap_pct": -0.96
+        },
+        {
+          "threshold": 0.6,
+          "bull": {
+            "n": 26,
+            "share_pct": 1.0,
+            "fwd_mean_pct": -1.85,
+            "win_rate_pct": 69.2
+          },
+          "bear": {
+            "n": 33,
+            "share_pct": 1.3,
+            "fwd_mean_pct": 1.29,
+            "win_rate_pct": 57.6
+          },
+          "gap_pct": -3.14
+        }
+      ],
+      "dynamic_scan": [
+        {
+          "k": 0.75,
+          "threshold": 0.211,
+          "trigger_pct": 54.9,
+          "bull_fwd_pct": 0.6,
+          "bear_fwd_pct": 1.29
+        },
+        {
+          "k": 1.0,
+          "threshold": 0.281,
+          "trigger_pct": 40.1,
+          "bull_fwd_pct": 0.5,
+          "bear_fwd_pct": 0.82
+        },
+        {
+          "k": 1.25,
+          "threshold": 0.351,
+          "trigger_pct": 25.1,
+          "bull_fwd_pct": 0.48,
+          "bear_fwd_pct": 0.48
+        },
+        {
+          "k": 1.5,
+          "threshold": 0.421,
+          "trigger_pct": 15.6,
+          "bull_fwd_pct": -0.04,
+          "bear_fwd_pct": 0.08
+        }
+      ]
+    }
+  }
+}
