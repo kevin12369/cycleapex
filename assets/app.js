@@ -101,9 +101,13 @@
   }
 
   // ---------------- 综合权重配置面板 ----------------
+  // 9 个投票维度。volume / volatility 已从投票席位移除：
+  //   · volume：80 份快照 σ=0.180、86 天翻转 42 次、与综合分 r=−0.12 → 噪声
+  //   · volatility：σ=0.068、与美股 r=+0.82 → 只是复述美股，却占权重把分数压回中间
+  // VIX 改以 risk_gauge 形式作"风险温度"展示（见 renderHero），不投票。
   const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", kr_stocks: "韩股", bonds: "债券",
-    gold: "黄金", sentiment: "情绪", volatility: "波动率", valuation: "估值",
-    volume: "量能", breadth: "广度", yen_carry: "日元/套息" };
+    gold: "黄金", sentiment: "情绪", valuation: "估值",
+    breadth: "广度", yen_carry: "日元/套息" };
 
   function getDimScore(key) {
     const mk = DATA.markets[key];
@@ -120,6 +124,32 @@
     if (tw === 0) return { score: 0, verdict: "unknown" };
     const score = acc / tw;
     return { score, verdict: score >= 0.33 ? "bull" : score <= -0.33 ? "bear" : "neutral" };
+  }
+
+  // 共识计数：不问"平均多偏"，只问"几个维度偏多、几个偏空"。
+  // 加权平均在维度高度共线时（情绪↔估值 r=−0.89）会正负抵消、恒贴零，
+  // 阈值 ±0.33 几乎打不到；共识计数不会被抵消抹平，代价是不含强度信息。
+  // 两者并列展示，分歧本身就是信息（平均偏多但票数不够 = 靠少数维度撑的牛）。
+  const VOTE_THRESHOLD = 0.15;
+  function computeConsensus(wmap) {
+    let bull = 0, bear = 0, total = 0;
+    Object.keys(WEIGHT_LABELS).forEach((k) => {
+      const w = wmap ? (wmap[k] || 0) : 1;
+      if (w <= 0) return;                 // 用户把权重拖到 0 = 该维度不投票
+      const sc = getDimScore(k);
+      if (sc == null) return;             // 没数据的维度不投票（不是投"中性"）
+      total += 1;
+      if (sc >= VOTE_THRESHOLD) bull += 1;
+      else if (sc <= -VOTE_THRESHOLD) bear += 1;
+    });
+    const neutral = total - bull - bear;
+    const net = bull - bear;
+    const ratio = total ? net / total : 0;
+    // 与后端同规则：净票数 ≥ 可用维度 1/3（最少 2 票）。
+    // 不用"比例≥0.34"——9 维时 net=3 恰好 0.3333，会被卡在门外。
+    const need = total ? Math.max(2, Math.ceil(total / 3)) : 2;
+    const verdict = net >= need ? "bull" : net <= -need ? "bear" : "neutral";
+    return { bull, bear, neutral, total, net, need, ratio, verdict };
   }
 
   function renderOverall(wmap) {
@@ -195,9 +225,7 @@
       bonds: "债市回暖·收益率往下走",
       gold: "金价狂飙·避险资金抱团",
       sentiment: "情绪上头·贪婪盖过恐惧",
-      volatility: "波动睡着·市场岁月静好",
       valuation: "估值还便宜·安全垫厚",
-      volume: "量能放大·资金在进场",
       breadth: "宽度铺开·个股普涨",
       yen_carry: "套息顺风顺水·资金敢冲",
     };
@@ -208,17 +236,15 @@
       bonds: "债市承压·收益率往上拱",
       gold: "金价趴窝·避险盘撤退",
       sentiment: "情绪慌了·恐惧占上风",
-      volatility: "波动炸了·恐慌指数抬头",
       valuation: "估值偏贵·小心挤泡沫",
-      volume: "量能萎缩·有人在派发",
       breadth: "宽度塌了·涨的只是权重",
       yen_carry: "套息在拆仓·赶紧系安全带",
     };
     const MID = {
       us_stocks: "美股原地打转", cn_stocks: "A股不上不下", kr_stocks: "韩股观望",
       bonds: "债市横着", gold: "金价没方向", sentiment: "情绪半对半",
-      volatility: "波动不咸不淡", valuation: "估值不便宜也不离谱",
-      volume: "量能平平", breadth: "宽度一般",
+      valuation: "估值不便宜也不离谱",
+      breadth: "宽度一般",
       yen_carry: "套息不温不火",
     };
     if (s >= 0.15) return POS[key] || null;
@@ -251,6 +277,42 @@
     }
     const st = document.getElementById("heroStructural");
     if (st && DATA.structural_signal) st.textContent = DATA.structural_signal;
+
+    // 共识口径：与上面的大字（加权口径）并列，两条腿分开走
+    const cons = document.getElementById("heroConsensus");
+    if (cons) {
+      const c = computeConsensus(currentWeights);
+      const CV = { bull: "多头共识", bear: "空头共识", neutral: "无共识" };
+      if (!c.total) {
+        cons.innerHTML = "共识口径：<span style=\"color:var(--muted)\">数据不足</span>";
+      } else {
+        const netTxt = (c.net > 0 ? "+" : "") + c.net;
+        cons.innerHTML =
+          '共识口径：<span class="vote"><b style="color:var(--bull)">' + c.bull + "多</b> · " +
+          '<b style="color:var(--muted)">' + c.neutral + "中</b> · " +
+          '<b style="color:var(--bear)">' + c.bear + "空</b></span>" +
+          '（净 ' + netTxt + "/" + c.total + "，" + (c.verdict === "neutral" ? "需 ±" + c.need + " 票才算共识" : "已达 ±" + c.need + " 票门槛") + "）" +
+          '<span class="cv ' + c.verdict + '">' + CV[c.verdict] + "</span>";
+        // 加权口径与共识口径分歧时点明，避免读者只挑顺眼的那个看
+        if (c.verdict !== "neutral" && ov.verdict !== c.verdict) {
+          cons.innerHTML += '<div style="margin-top:4px;color:var(--neutral)">' +
+            "⚠ 两个口径不一致：加权平均" + VERDICT_TEXT[ov.verdict] +
+            "、共识投票" + VERDICT_TEXT[c.verdict] +
+            " —— 说明分歧集中在少数极端维度上。</div>";
+        }
+      }
+    }
+
+    // 风险温度计（VIX，不参与综合分）
+    const rg = document.getElementById("heroGauge");
+    if (rg) {
+      const g = DATA.risk_gauge;
+      rg.innerHTML = (g && g.vix != null)
+        ? "风险温度：<b>" + g.vix.toFixed(1) + "</b> " + (g.regime || "") +
+          ' <span style="color:var(--muted)">（' + (g.source || "VIX") + "·不参与综合分）</span>"
+        : '风险温度：<span style="color:var(--muted)">VIX 暂不可达</span>';
+    }
+
     const chips = document.getElementById("heroChips");
     if (chips) {
       const m = DATA.markets;
@@ -279,8 +341,12 @@
     const tot = dims.reduce((a, k) => a + (wmap[k] || 0), 0) || 1;
     const eff = dims.map((k) => `${(WEIGHT_LABELS[k] || k)} ${((wmap[k] || 0) / tot * 100).toFixed(0)}%`).join(" · ");
     const ov = computeOverall(wmap);
+    const cs = computeConsensus(wmap);
+    const CV = { bull: "多头共识", bear: "空头共识", neutral: "无共识" };
     note.innerHTML = `有效权重（已自动归一化，无需各档和=100）：<br/>${eff}<br/>` +
-      `按当前权重，综合结论：<b class="badge ${ov.verdict}" style="padding:1px 8px">${VERDICT_TEXT[ov.verdict]} (${Math.round(ov.score * 100)})</b>`;
+      `加权口径：<b class="badge ${ov.verdict}" style="padding:1px 8px">${VERDICT_TEXT[ov.verdict]} (${Math.round(ov.score * 100)})</b>` +
+      ` &nbsp;共识口径：<b class="badge ${cs.verdict}" style="padding:1px 8px">${CV[cs.verdict]} ` +
+      `(${cs.bull}多/${cs.neutral}中/${cs.bear}空)</b>`;
   }
 
   // ---------------- K线 + 均线 + 量 ----------------
@@ -386,7 +452,9 @@
   }
   function renderHeatmap() {
     const mk = DATA.markets || {};
-    let dims = Object.keys(mk).map((k) => {
+    // 只渲染"投票维度"。markets 里还有 fx（外汇，给 K 线图表化用，没有 score），
+    // 若按 Object.keys(mk) 遍历，会多出一行分数恒为 0 的"外汇"，看起来像个中性维度。
+    let dims = Object.keys(WEIGHT_LABELS).filter((k) => mk[k]).map((k) => {
       const m = mk[k];
       return { key: k, label: WEIGHT_LABELS[k] || m.label || k,
         score: typeof m.score === "number" ? m.score : 0,

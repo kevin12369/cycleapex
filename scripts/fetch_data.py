@@ -289,6 +289,40 @@ def vol_confirm_score(close, vol):
     return round(direction * surge, 3)
 
 
+def bond_change_score(closes, window=20, scale_bp=25.0):
+    """债券维度：只看「收益率 20 日变化量」，不看「收益率绝对水平」。
+
+    旧口径（build_series invert=True）测的是收益率均线排列/RSI/MACD，
+    即"收益率的绝对水平在往哪个方向走"。问题是长端收益率可能连续数月偏高，
+    这时它会天天输出负分（实测历史 80 份快照中该维度从未为正，区间 −0.715~−0.001），
+    等于把"期限溢价的结构性上移"误读成"今天债市在跌"——一个恒为空的格子不是信号。
+
+    新口径：20 日下行 25bp → +1（债市走牛），上行 25bp → −1。
+    单位说明：^TNX 与东财中债 10Y 的数值都是百分数（4.5 表示 4.5%），
+    所以 25bp = 0.25 个百分点，scale_bp 按 25.0 传入后内部除以 100。
+
+    不可计算（点数不足）返回 None，不返回 0.0。"""
+    c = [x for x in closes if x is not None]
+    if len(c) < window + 1:
+        return None
+    delta = c[-1] - c[-1 - window]        # 百分点，正=收益率上行
+    return round(clamp(-delta / (scale_bp / 100.0)), 3)
+
+
+def apply_bond_score(s):
+    """把已构建好的债券序列的 score 换成「收益率变化量」口径。
+
+    K 线、均线、RSI、MACD 全部保留（前端选到"美债10Y"仍能正常看图），
+    只是这个序列对维度投票时用的是变化量分，而不是水平方向分。"""
+    if s is None:
+        return None
+    chg = bond_change_score(s.get("close") or [])
+    s["score"] = chg
+    s["verdict"] = verdict_from_score(chg)
+    s["scoreBasis"] = "收益率20日变化"
+    return s
+
+
 def breadth_score(up, down, flat=0):
     """市场广度得分：(涨-跌)/(涨+跌+平) ∈ [-1,1]，>0 普涨、<0 普跌。"""
     tot = up + down + flat
@@ -535,10 +569,15 @@ def fetch_multpl(metric_slug):
 # 构建单序列对象（含指标与最新分）
 # ----------------------------------------------------------------------------
 def build_series(name, symbol, raw, invert=False):
-    # 清洗空值行（Yahoo 末/首根偶有 null），保证 OHLC 与指标对齐
+    # 清洗空值行（Yahoo 末/首根偶有 null），保证 OHLC 与指标对齐。
+    # 东财中债10Y 只给 dates+close，没有 OHLCV，这里用收盘价补齐，
+    # 否则 zip(raw["open"], ...) 会直接 KeyError 把整个脚本带崩。
+    _c = raw.get("close") or []
+    _o = raw.get("open") or _c
+    _h = raw.get("high") or _c
+    _l = raw.get("low") or _c
     dates, o, h, l, c, vol = [], [], [], [], [], []
-    for d, op, hp, lp, cp, vp in zip(raw["dates"], raw["open"], raw["high"],
-                                     raw["low"], raw["close"], raw.get("vol", [])):
+    for d, op, hp, lp, cp, vp in zip(raw["dates"], _o, _h, _l, _c, raw.get("vol") or [0] * len(_c)):
         if None in (op, hp, lp, cp):
             continue
         dates.append(d); o.append(op); h.append(hp); l.append(lp); c.append(cp)
@@ -707,12 +746,15 @@ def main():
         print(f"  [OK] 情绪 恐贪 {fng['value']} 分 {fng_score}")
 
     # ---------- 美债10Y ----------
+    # 分数口径 = 收益率 20 日变化量（见 bond_change_score 的说明）。
+    # 序列本身仍完整构建（K 线/均线/RSI 照旧），只是 score 换成变化量口径。
     us10y_raw = fetch_yahoo("^TNX")
     us10y = None
     if us10y_raw:
-        us10y = build_series("美债10Y", "^TNX", us10y_raw, invert=True)
+        us10y = build_series("美债10Y", "^TNX", us10y_raw)
         if us10y:
-            print(f"  [OK] 美债10Y 分 {us10y['score']}")
+            us10y = apply_bond_score(us10y)
+            print(f"  [OK] 美债10Y 20日变化 分 {us10y['score']}")
         else:
             print("  [WARN] 美债10Y 清洗后无有效 K 线，已跳过")
 
@@ -754,15 +796,14 @@ def main():
                 print(f"  [WARN] A股 排除 {len(cn_skipped)} 条数据不足的指数："
                       f"{'、'.join(cn_skipped)}（仅用剩余序列平均，不再按 0 分计入）")
 
-    # ---------- 量能维度（价量配合，跨市场聚合） ----------
+    # ---------- 量能（已降级为参考，不产出维度） ----------
+    # 原 volume 维度：把美股+A股所有序列的 volScore 等权平均。
+    # 实测 80 份快照 σ=0.180、86 天翻转 42 次、与综合分 r=−0.12 —— 是噪声不是信号。
+    # 量价配合在指数层面本来就不稳（ETF 申赎、衍生品对冲都会扭曲成交量），
+    # 与其留一个每天乱跳的 7% 权重，不如把 volScore 保留在序列里供 K 线图看。
     all_vol = [s["volScore"] for s in (us_series + cn_series) if s.get("volScore") is not None]
     if all_vol:
-        vol_score = round(sum(all_vol) / len(all_vol), 3)
-        add_dim("volume", "量能", vol_score, verdict_from_score(vol_score), "量价配合(跨市场)")
-        for s in (us_series + cn_series):
-            if s.get("volScore") is not None:
-                add_heat("量能", s["name"], round(s["volScore"], 3))
-        print(f"  [OK] 量能 综合 {vol_score}")
+        print(f"  [--] 量价配合参考值 {round(sum(all_vol) / len(all_vol), 3)}（不参与综合分）")
 
     # ---------- 广度维度（跨市场：A股涨跌家数 + 美股等权-市值差） ----------
     ab = fetch_eastmoney_breadth()
@@ -801,16 +842,17 @@ def main():
     else:
         print("  [SKIP] 广度抓取失败（A股+美股均不可达）")
 
-    # ---------- 债券维度（美债10Y + 中债10Y） ----------
+    # ---------- 债券维度（美债10Y + 中债10Y，口径=收益率20日变化量） ----------
     bond_series = []
     if us10y:
         bond_series.append(us10y)
     cn10y_raw = fetch_china_10y_yield()
     if cn10y_raw:
-        cn10y = build_series("中债10Y", "CN_10Y", cn10y_raw, invert=True)
+        cn10y = build_series("中债10Y", "CN_10Y", cn10y_raw)
         if cn10y:
+            cn10y = apply_bond_score(cn10y)
             bond_series.append(cn10y)
-            print(f"  [OK] 中债10Y 分 {cn10y['score']}")
+            print(f"  [OK] 中债10Y 20日变化 分 {cn10y['score']}")
         else:
             print("  [WARN] 中债10Y 清洗后无有效 K 线，已跳过")
     if bond_series:
@@ -818,12 +860,16 @@ def main():
         if bond_skipped:
             print(f"  [WARN] 债券维度排除数据不足序列：{'、'.join(bond_skipped)}")
         add_dim("bonds", "债券", bond_score, verdict_from_score(bond_score),
-                "中美10Y国债(反向)", {"series": bond_series, "skipped": bond_skipped})
-        add_heat("债券", "美债10Y", us10y["score"] if us10y else None)
+                "中美10Y收益率20日变化(下行=债牛)", {"series": bond_series, "skipped": bond_skipped})
+        add_heat("债券", "美债10Y-20日变化", us10y["score"] if us10y else None)
         if cn10y_raw:
-            add_heat("债券", "中债10Y", bond_series[-1]["score"])
+            add_heat("债券", "中债10Y-20日变化", bond_series[-1]["score"])
 
-    # ---------- 波动率维度（VIX 优先；Yahoo 403 时用标普已实现波动率代理） ----------
+    # ---------- 风险温度计（VIX 优先；Yahoo 403 时用标普已实现波动率代理） ----------
+    # 注意：这里【不再】产出 volatility 维度。
+    # 理由见 WEIGHTS 注释：VIX 与美股 r=+0.82、与情绪 r=+0.82，作为投票项纯属重复计票。
+    # 但它作为「风险温度」仍然有用（估值泡沫判断、structural_signal 都要它），
+    # 所以保留抓取、保留数值与状态，只是不参与综合分。
     vix_raw = fetch_yahoo("^VIX")
     vix_val = None
     vix_src = "VIX"
@@ -842,17 +888,14 @@ def main():
                 var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
                 vix_val = (var ** 0.5) * (252 ** 0.5) * 100
                 vix_src = "标普20日已实现波动率代理"
+    risk_gauge = None
     if vix_val is not None:
-        vs = vix_score(vix_val)
-        regime = ("极端恐慌" if vix_val > 30 else "恐慌" if vix_val > 25 else
-                  "谨慎" if vix_val > 20 else "正常" if vix_val > 15 else "平静")
-        add_dim("volatility", "波动率", vs, verdict_from_score(vs),
-                f"{vix_src} {vix_val:.1f} · {regime}",
-                {"vix": {"value": round(vix_val, 2), "regime": regime, "source": vix_src}})
-        add_heat("风险", "VIX波动率", round(vs, 3))
-        print(f"  [OK] 波动率 {vix_src} {vix_val:.1f} 分 {vs} ({regime})")
+        vix_regime = ("极端恐慌" if vix_val > 30 else "恐慌" if vix_val > 25 else
+                      "谨慎" if vix_val > 20 else "正常" if vix_val > 15 else "平静")
+        risk_gauge = {"vix": round(vix_val, 2), "regime": vix_regime, "source": vix_src}
+        print(f"  [OK] 风险温度 {vix_src} {vix_val:.1f}（{vix_regime}）· 不参与综合分")
     else:
-        print("  [SKIP] VIX 抓取失败")
+        print("  [SKIP] VIX 抓取失败（风险温度计不可用）")
 
     # ---------- 估值维度（CAPE + ERP，multpl 免密钥；失败回退价格代理） ----------
     cape_d = fetch_multpl("shiller-pe")
@@ -963,25 +1006,55 @@ def main():
         print("  [SKIP] USD/JPY 抓取失败")
 
     # ---------- 加权综合（按可用维度归一化） ----------
-    # 11 个维度，合计 0.89；运行时按「实际可用维度」归一化，故绝对值和不必等于 1。
-    # 原 credit(0.06) / macro(0.08) 已随 FRED 依赖一并移除（本项目不使用密钥数据源）。
-    WEIGHTS = {"us_stocks": 0.15, "cn_stocks": 0.13, "kr_stocks": 0.06,
-               "bonds": 0.09, "gold": 0.05, "sentiment": 0.10,
-               "volatility": 0.06, "valuation": 0.07,
-               "volume": 0.07, "breadth": 0.06, "yen_carry": 0.05}
+    # 9 个维度，合计 1.00。
+    #
+    # 演进史（勿删，避免下次又凭直觉把噪声维度加回来）：
+    #   · credit(0.06) / macro(0.08)：随 FRED 依赖一并移除（本项目不使用任何密钥数据源）。
+    #   · volume(0.07)：80 份快照实测 σ=0.180、86 天里翻转 42 次、与综合分 r=−0.12。
+    #     "量价配合"在 A股/美股两个市场用同一套口径聚合，实际测到的是噪声而非趋势确认。
+    #   · volatility(0.06)：σ=0.068（全部维度最低），与美股 r=+0.82、与情绪 r=+0.82。
+    #     它几乎完全复述美股维度，却占 6% 权重把综合分往中间拉。
+    #     VIX 本身有价值，但价值在"风险温度"而非"投票"，故改为不投票的 risk_gauge 展示。
+    #
+    # 删掉这两项后 leave-one-out 复核：σ 0.072 → 0.084（+17%），振幅不再被均值回归压平。
+    # 剩余 9 项按原相对比例放大到 1.00（不改变彼此的相对话语权）。
+    WEIGHTS = {"us_stocks": 0.19, "cn_stocks": 0.17, "kr_stocks": 0.08,
+               "bonds": 0.12, "gold": 0.07, "sentiment": 0.13,
+               "valuation": 0.09, "breadth": 0.08, "yen_carry": 0.07}
     present = {k: v for k, v in dims.items() if k in WEIGHTS}
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
 
-    # ---------- 结构信号（Pérez 范式叠加 + 广度/量能校验） ----------
+    # ---------- 共识计数（与加权平均并列，两条腿分开走） ----------
+    # 加权平均的毛病：维度高度共线时（情绪↔估值 r=−0.89）正负互相抵消，
+    # 结果永远贴着 0，阈值 ±0.33 几乎打不到，Hero 大字恒为"震荡"。
+    # 共识计数不问"平均多偏"，只问"几个维度偏多、几个偏空"，
+    # 不会被一两个极值维度吃掉，也不会被两两抵消抹平。
+    # 两者分歧本身也是信息：平均偏多但票数不够 = 靠少数维度撑起来的牛市。
+    bull_n = sum(1 for k in present if dims[k] >= 0.15)
+    bear_n = sum(1 for k in present if dims[k] <= -0.15)
+    n_dim = len(present)
+    neutral_n = n_dim - bull_n - bear_n
+    net_votes = bull_n - bear_n
+    vote_ratio = round(net_votes / n_dim, 3) if n_dim else 0.0
+    # 用「净票数 ≥ 可用维度 1/3」而非「比例 ≥ 0.34」判定。
+    # 9 个维度时 net=3 的比例恰好是 0.3333…，若阈值写 0.34 就会被浮点四舍五入
+    # 卡在门外（实测 2026-10-20、10-31 两天都是 1多/4中/4空，本该判空头共识却判成无共识）。
+    # 直接比票数，规则可读、也没有边界歧义。最少 2 票，避免只剩 3 个维度时 1 票定生死。
+    need = max(2, math.ceil(n_dim / 3)) if n_dim else 2
+    consensus_verdict = ("bull" if net_votes >= need else
+                         "bear" if net_votes <= -need else "neutral")
+    consensus = {"bull": bull_n, "bear": bear_n, "neutral": neutral_n,
+                 "total": n_dim, "net": net_votes, "need": need,
+                 "ratio": vote_ratio, "verdict": consensus_verdict}
+
+    # ---------- 结构信号（Pérez 范式叠加 + 广度校验） ----------
     val_mk = markets.get("valuation")
     cape_v = val_mk.get("cape") if val_mk else None
-    vix_v = markets.get("volatility", {}).get("vix", {}).get("value")
+    vix_v = risk_gauge["vix"] if risk_gauge else None      # 风险温度计，来自上面的 VIX 抓取
     val_score = val_mk.get("score") if val_mk else None
     br_mk = markets.get("breadth")
     br_score = br_mk.get("score") if br_mk else None
-    vol_mk = markets.get("volume")
-    vol_score = vol_mk.get("score") if vol_mk else None
 
     if val_score is not None:
         if (cape_v and cape_v > 35 or val_score < -0.4) and (vix_v is None or vix_v < 18):
@@ -992,14 +1065,12 @@ def main():
         else:
             structural = "估值中性：未显现明显泡沫特征"
     else:
-        structural = "估值数据不足，结构信号以广度/量能校验为准"
+        structural = "估值数据不足，结构信号以广度校验为准"
 
     if br_score is not None and br_score < -0.3:
         structural += "；广度显著转弱（普跌），与指数背离，警惕量价动能衰减。"
     elif br_score is not None and br_score > 0.3:
         structural += "；广度普涨配合，宽度健康。"
-    if vol_score is not None and vol_score < -0.2:
-        structural += " 量能转弱：缩量/派发，趋势确认度下降。"
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1018,6 +1089,11 @@ def main():
         },
         "markets": markets,
         "overall": {"score": overall, "verdict": verdict_from_score(overall)},
+        # 两条腿并列：加权平均看"平均多偏"，共识计数看"几个维度偏"。
+        # 前端把两者都渲染出来，分歧本身即信息。
+        "consensus": consensus,
+        # 风险温度计（不投票）：VIX 数值与状态，供估值泡沫判断与页头展示
+        "risk_gauge": risk_gauge,
         "heatmap": heatmap,
         "professional": {
             "weights": WEIGHTS,
@@ -1025,14 +1101,14 @@ def main():
             "dimensions": {k: round(dims[k], 3) for k in present},
             "method_notes": [
                 "序列技术分 = 0.5·MA排列(MA20/60/200) + 0.25·RSI(14) + 0.25·MACD(12,26,9)",
-                "债券维度对收益率取反（收益率上行=债市走熊）",
+                "债券维度改测「收益率 20 日变化量」而非「收益率绝对水平」：20日下行25bp→+1，上行→−1。原口径测的是水平方向，长端长期偏高时会给出一条恒为负的序列，等于把期限溢价的结构性上移误读成每日的债市下跌",
                 "情绪维度 = (恐贪指数-50)/50",
-                "波动率维度 VIX 低=平静偏牛、高=恐慌偏熊",
                 "估值维度 CAPE 越高越贵(未来回报预期越低)、ERP 越高股票越具吸引力",
-                "量能维度 = 价涨且放量→配合(正)、价跌且放量→派发(负)，跨美股/A股聚合",
                 "广度维度 = 跨市场复合：A股(涨家数-跌家数)/(涨+跌+平) 等权 0.5 + 美股等权ETF(RSP)对市值ETF(SPY)的月度动量(等权跑赢=宽度扩散)，各0.5",
-                "综合分 = 各维度分按权重加权，并对「实际可用维度」归一化（未配置源自动剔除）",
-                "结构层：引入 Carlota Pérez 技术-经济范式周期，叠加广度/量能背离校验，作为战术牛熊之上的制度背景",
+                "综合分（加权口径）= 各维度分按权重加权，并对「实际可用维度」归一化",
+                "共识口径 = 偏多维度数 − 偏空维度数（|分|≥0.15 才计票）；净票数达到「可用维度数的 1/3」（最少 2 票）即判多头/空头共识，否则无共识。用于对冲加权口径在维度共线时的「正负抵消→恒贴零」缺陷",
+                "波动率与量能不再作为维度投票：VIX 与美股 r=+0.82、量能 86 天翻转 42 次，前者复述美股、后者是噪声。VIX 以 risk_gauge 形式作为风险温度展示",
+                "结构层：引入 Carlota Pérez 技术-经济范式周期，叠加广度背离校验，作为战术牛熊之上的制度背景",
                 "韩国 KOSPI：高 Beta、半导体/出口敏感市场，作全球风险与 AI 硬件周期领先指标（kr_stocks）",
                 "黄金维度作避险/实际利率代理，按自身价格趋势计综合分（金价走强常伴随避险需求/实际利率下行）",
                 "日元套息维度 = clamp(USD/JPY 近20日变动 / 5%)：JPY 弱=套息顺畅=risk-on，JPY 急升=平仓=risk-off（yen_carry）",
@@ -1050,7 +1126,8 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    print(f"== 完成，写入 {OUT_FILE} | 综合分 {overall} {payload['overall']['verdict']} ==")
+    print(f"== 完成，写入 {OUT_FILE} | 综合分 {overall} {payload['overall']['verdict']}"
+          f" | 共识 {bull_n}多/{neutral_n}中/{bear_n}空 → {consensus_verdict} ==")
 
     # ---------- 历史快照归档（供历史回看 / 回测基线 / 失败回滚） ----------
     try:
@@ -1073,6 +1150,8 @@ def main():
             "status": "ok",
             "generated_at": payload["generated_at"],
             "overall": payload["overall"],
+            "consensus": payload["consensus"],
+            "risk_gauge": payload["risk_gauge"],
             "dims_available": len(present),
             "dims_total": len(WEIGHTS),
             "note": ("全部维度可用" if len(present) == len(WEIGHTS)
