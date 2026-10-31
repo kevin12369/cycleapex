@@ -1,0 +1,50 @@
+name: Backtest (manual)
+
+# 手动触发：重跑多窗口回测并提交 data/backtest_oos.json
+# 用途：本地网络拿不到 Yahoo 长历史时（Yahoo 对非浏览器来源常年 403），
+#       借 runner 的网络跑一次，把结果提交回仓库。
+on:
+  workflow_dispatch:
+    inputs:
+      horizon:
+        description: "前瞻交易日（默认 21）"
+        required: false
+        default: "21"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Run multi-window backtest
+        run: python scripts/backtest.py --multi --horizon "${{ github.event.inputs.horizon }}"
+
+      - name: Commit result
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "github-actions[bot]"
+          git add data/backtest_oos.json
+          if git diff --cached --quiet; then
+            echo "回测结果无变化，跳过提交"
+          else
+            git commit -m "data: 重跑多窗口回测 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
