@@ -262,7 +262,15 @@
       badge.textContent = VERDICT_TEXT[ov.verdict];
     }
     const sc = document.getElementById("heroScore");
-    if (sc) sc.textContent = "综合分 " + Math.round(ov.score * 100) + " · " + (ov.score >= 0 ? "偏多" : "偏空");
+    if (sc) {
+      // 判「震荡」时不要再写「偏多/偏空」——徽章写震荡、旁边写偏空是自相矛盾。
+      // 震荡时改为报「离触发判定还差多少分」，读者才知道这根线离转向有多远。
+      const v = Math.round(ov.score * 100);
+      const gap = Math.round((0.33 - Math.abs(ov.score)) * 100);
+      sc.textContent = (ov.verdict === "neutral" && gap > 0)
+        ? "综合分 " + v + " · 距触发判定还差 " + gap
+        : "综合分 " + v + " · " + (ov.verdict === "bull" ? "偏多" : ov.verdict === "bear" ? "偏空" : "中性");
+    }
     const split = document.getElementById("heroSplit");
     if (split) {
       const parts = [{ key: "cn_stocks", label: "🇨🇳 A股" }, { key: "us_stocks", label: "🇺🇸 美股" }];
