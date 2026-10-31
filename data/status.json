@@ -20,6 +20,6 @@
   "freshness_lag_days": 1,
   "dims_available": 7,
   "dims_total": 7,
-  "write_skipped": false,
-  "note": "全部维度可用"
+  "write_skipped": true,
+  "note": "本次结果覆盖度更低已被拒绝，发布的是上一份同截止日数据"
 }
