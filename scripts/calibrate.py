@@ -275,11 +275,13 @@ def analyse(comp, target, horizon):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--years", type=int, default=10)
-    ap.add_argument("--horizon", type=int, default=21)
+    ap.add_argument("--horizons", default="21,60",
+                    help="前瞻交易日数，逗号分隔。21 对应月度、60 对应季度")
     ap.add_argument("--out", default=os.path.join(OUT_DIR, "calibration.json"))
     args = ap.parse_args()
+    horizons = [int(x) for x in str(args.horizons).split(",") if x.strip()]
 
-    print(f"== 阈值标定：{args.years} 年历史，前瞻 {args.horizon} 个交易日 ==\n")
+    print(f"== 阈值标定：{args.years} 年历史，前瞻 {horizons} 个交易日 ==\n")
     print("-- 抓取底层序列 --")
     dims, used, cache = build_dim_series(args.years)
     print(f"\n-- 可用维度 {len(dims)}/{len(WEIGHTS)}：{'、'.join(DIM_LABEL.get(k, k) for k in dims)} --")
@@ -291,7 +293,7 @@ def main():
     out = {
         "generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "years": args.years,
-        "horizon_days": args.horizon,
+        "horizons": horizons,
         "dims_rebuilt": {k: {"sub_series": used.get(k, 0), "days": len(v)}
                          for k, v in dims.items()},
         "dims_missing": [k for k in WEIGHTS if k not in dims],
@@ -326,23 +328,26 @@ def main():
         if t is None:
             print(f"  [SKIP] {label} 取不到历史，跳过该标的的评估")
             continue
-        res = analyse(comp, t, args.horizon)
-        res["target_series"] = t.get("symbol") or t.get("name")
-        out["targets"][label] = res
-        if "error" in res:
-            print(f"  {res['error']}")
-            continue
-        print(f"  样本 {res['n_days']} 天  σ={res['composite_sigma']}  "
-              f"固定±0.33 触发率 {res['fixed_033_trigger_pct']}%  "
-              f"与前瞻收益相关 r={res['corr_with_fwd']}")
-        print("  十档（按综合分从低到高）：")
-        for b in res["deciles"]:
-            print(f"    第{b['bucket']:2d}档 分 {b['score_min']:+.2f}~{b['score_max']:+.2f}  "
-                  f"fwd{b['fwd_mean_pct']:+.2f}%  胜率 {b['win_rate_pct']:>5.1f}%  n={b['n']}")
-        print("  动态阈值：")
-        for d in res["dynamic_scan"]:
-            print(f"    ±{d['k']}σ = {d['threshold']:+.3f}  触发 {d['trigger_pct']}%  "
-                  f"多头组 fwd {d['bull_fwd_pct']}%  空头组 fwd {d['bear_fwd_pct']}%")
+
+        entry = {"target_series": t.get("symbol") or t.get("name"), "by_horizon": {}}
+        for h in horizons:
+            res = analyse(comp, t, h)
+            entry["by_horizon"][str(h)] = res
+            if "error" in res:
+                print(f"  h={h}: {res['error']}")
+                continue
+            print(f"\n  h={h}  样本 {res['n_days']} 天  σ={res['composite_sigma']}  "
+                  f"固定±0.33 触发率 {res['fixed_033_trigger_pct']}%  "
+                  f"与前瞻收益相关 r={res['corr_with_fwd']}")
+            print("    十档（按综合分从低到高）：")
+            for b in res["deciles"]:
+                print(f"      第{b['bucket']:2d}档 {b['score_min']:+.2f}~{b['score_max']:+.2f}  "
+                      f"fwd{b['fwd_mean_pct']:+.2f}%  胜率 {b['win_rate_pct']:>5.1f}%  n={b['n']}")
+            print("    动态阈值：")
+            for d in res["dynamic_scan"]:
+                print(f"      ±{d['k']}σ = {d['threshold']:+.3f}  触发 {d['trigger_pct']}%  "
+                      f"多头组 fwd {d['bull_fwd_pct']}%  空头组 fwd {d['bear_fwd_pct']}%")
+        out["targets"][label] = entry
 
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:

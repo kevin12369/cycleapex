@@ -10,9 +10,9 @@ on:
         required: false
         default: "10"
       horizon:
-        description: "前瞻交易日数"
+        description: "前瞻交易日数（逗号分隔，如 21,60）"
         required: false
-        default: "21"
+        default: "21,60"
 
 permissions:
   contents: write
@@ -34,7 +34,7 @@ jobs:
         run: |
           python scripts/calibrate.py \
             --years "${{ github.event.inputs.years || 10 }}" \
-            --horizon "${{ github.event.inputs.horizon || 21 }}"
+            --horizons "${{ github.event.inputs.horizon || '21,60' }}"
 
       - name: Commit result
         run: |
