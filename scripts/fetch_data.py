@@ -1207,20 +1207,35 @@ def main():
 
     # ---------- 状态文件（供自动化告警读取） ----------
     try:
+        # 必须以「实际发布出去的那份」为准。keep_prev 时本次 payload 已被拒绝，
+        # 若仍拿它写 status.json，告警读到的 overall 会和页面上显示的不一致
+        #（实测 2026-10-31：status 写 -0.08，页面显示 -0.091）。
+        published = payload
+        if keep_prev:
+            try:
+                published = json.load(open(OUT_FILE, encoding="utf-8"))
+            except Exception as e:  # noqa
+                print(f"  [WARN] 读取已发布 market.json 失败，status 退回用本次结果: {e}")
+        p_dims = len((published.get("professional") or {}).get("dimensions") or {})
         status = {
             "status": "ok",
-            "generated_at": payload["generated_at"],
-            "overall": payload["overall"],
-            "consensus": payload["consensus"],
+            "generated_at": published["generated_at"],
+            "overall": published["overall"],
+            "consensus": published["consensus"],
             # 数据截止日 + 新鲜度状态。自动化告警应优先看 data_as_of / freshness_status，
             # 而不是 generated_at —— 休市期间 generated_at 天天变、数据却不动。
-            "data_as_of": payload["data_freshness"]["as_of"],
-            "freshness_status": payload["data_freshness"]["status"],
-            "freshness_lag_days": payload["data_freshness"]["lag_days"],
-            "dims_available": len(present),
+            "data_as_of": published["data_freshness"]["as_of"],
+            "freshness_status": published["data_freshness"]["status"],
+            "freshness_lag_days": published["data_freshness"]["lag_days"],
+            "dims_available": p_dims,
             "dims_total": len(WEIGHTS),
-            "note": ("全部维度可用" if len(present) == len(WEIGHTS)
-                     else "部分维度因数据源本次不可达而缺失，已按可用维度归一化"),
+            # 本次跑批结果因覆盖度更低被拒绝，页面沿用上一份。告警看到这个 true
+            # 就该知道「数据源这次抖了」，而不是以为一切正常。
+            "write_skipped": keep_prev,
+            "note": (("本次结果覆盖度更低已被拒绝，发布的是上一份同截止日数据"
+                      if keep_prev else
+                      "全部维度可用" if p_dims == len(WEIGHTS)
+                      else "部分维度因数据源本次不可达而缺失，已按可用维度归一化")),
         }
         with open(os.path.join(OUT_DIR, "status.json"), "w", encoding="utf-8") as f:
             json.dump(status, f, ensure_ascii=False, indent=2)
