@@ -26,7 +26,6 @@ import re
 import sys
 import time
 import datetime as dt
-from urllib.parse import urlencode
 
 try:
     import requests
