@@ -1,11 +1,26 @@
 {
   "status": "ok",
-  "generated_at": "2026-10-31T04:05:08Z",
+  "generated_at": "2026-10-31T05:43:39Z",
   "overall": {
-    "score": -0.115,
+    "score": 0.0,
     "verdict": "neutral"
   },
-  "dims_available": 11,
-  "dims_total": 11,
+  "consensus": {
+    "bull": 2,
+    "bear": 4,
+    "neutral": 3,
+    "total": 9,
+    "net": -2,
+    "need": 3,
+    "ratio": -0.222,
+    "verdict": "neutral"
+  },
+  "risk_gauge": {
+    "vix": 19.42,
+    "regime": "正常",
+    "source": "VIX"
+  },
+  "dims_available": 9,
+  "dims_total": 9,
   "note": "全部维度可用"
 }
