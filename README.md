@@ -65,16 +65,23 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
 
 ## 部署到 GitHub Pages
 
+本站使用 **GitHub Actions 部署**（仓库 Pages 配置实测为 `build_type: workflow`），由 `.github/workflows/pages.yml` 负责发布。**不要**在 Settings 里选 "Deploy from a branch"——两种模式混用会造成"分支内容即站点"的误解，还会把 88MB 的 `data/history` 一起发布出去。
+
+新仓库首次部署时按此操作：
+
 1. 将仓库推送至 GitHub（公共仓库免费，且 Actions 分钟数不限）。
-2. **仓库 Settings → Secrets and variables → Actions → New repository secret**（可选）：
+2. **Settings → Secrets and variables → Actions → New repository secret**（可选）：
    - `FRED_KEY`：到 https://fredaccount.stlouisfed.org 免费注册获取，启用**美国宏观（CPI/失业率/GDP）**与**中债10Y**兜底。
    - `TUSHARE_TOKEN`：到 https://tushare.pro 注册获取，作为 A 股数据的额外兜底源。
-3. **仓库 Settings → Pages → Build and deployment → Source 选择 "Deploy from a branch"**，
-   Branch 选 `main`，目录选 `/ (root)`。
-4. 工作流默认**每周一至周五 21:00 UTC** 运行（美股收盘后，覆盖当日 A 股数据）。可到 Actions 页手动 `Run workflow` 立即触发。
-5. 每次运行会提交新的 `data/market.json`，GitHub Pages 自动重建并发布。
+3. **Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"**。
+4. 两个工作流的分工：
+   - `update.yml`：工作日 21:00 UTC 由 cron 触发抓取与判定，只提交 `data/`；
+   - `pages.yml`：任意 push 到 `main` 后触发发布。
+5. 可到 Actions 页手动 `Run workflow` 立即触发。
 
-> 公共仓库若 **60 天无任何活动**，GitHub 会自动禁用定时任务。本工作流每次运行都会提交数据，
+**`pages.yml` 发布的是装配出来的 `dist/`，不是仓库根目录**：只拷贝 `index.html`、`report.html`、`assets/app.js`、`assets/style.css`、`data/market.json`、`data/paradigm.json` 与 `.nojekyll`。因此 `data/history/`（80 余份快照、约 88MB）、`scripts/`、`.github/` 都不会上线——线上访问 `data/history/*.json` 返回 404 属**预期行为**，发布体积从 116MB 降到约 2MB。新增前端文件时，请同步更新 `pages.yml` 的拷贝清单。
+
+> 公共仓库若 **60 天无任何活动**，GitHub 会自动禁用定时任务。`update.yml` 每次运行都会提交数据，
 > 只要保持运行即可持续保持活跃，无需额外的 keep-alive 提交。
 
 ## 本地自动化（WorkBuddy，推荐）
