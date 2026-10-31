@@ -48,6 +48,12 @@
 
 → **`status: ok` 只说明脚本没崩，不等于数据完整。** 判断当天数据能不能用，看 `dims_available`。
 
+## 快照保留
+
+`fetch_data.py` 归档完当天的 `data/history/YYYY-MM-DD.json` 后会顺带清理 30 天前的快照（`HISTORY_KEEP_DAYS`，默认 30，设 0 关闭）。这个清理发生在脚本内，所以**云端与本机两条链路都会执行**，任务本身不需要额外步骤。
+
+更早的历史不在仓库内：2026-10-31 已把 2026-07-12 ~ 2026-09-30 共 59 份移到 `D:/Coder/_cycleapex-history-archive/`（带 `_MANIFEST.txt`）。需要回填时从那目录 `cp` 回 `data/history/` 即可。
+
 ## 如何重建这个任务
 
 平台侧新建一个定时任务，工作目录设为项目根，prompt 按上文字段填写，调度设为工作日 09:00。密钥只需放在项目根的 `.env`（参照 `.env.example`），不要写进 prompt。
