@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fetch_data import payload_coverage, should_keep_previous  # noqa: E402
+from fetch_data import payload_coverage, should_keep_previous, bars_ok  # noqa: E402
 
 
 def mk(as_of, dims, heat):
@@ -74,6 +74,34 @@ def main():
         print(f"FAILED {len(fails)}: {fails}")
         return 1
     print("ALL PASS (8/8)")
+    return test_bars_ok()
+
+
+def test_bars_ok():
+    """bars_ok：东财被限流时返回 HTTP 200 但只有 1 根 K 线，
+    旧逻辑（raw is None 才回退）会把它当成成功，导致 A股 维度退化成单腿。"""
+    print("\n== bars_ok（残缺响应判据） ==")
+    fails = []
+
+    def chk(name, got, want):
+        ok = got == want
+        print(("  PASS  " if ok else "  FAIL  ") + name)
+        if not ok:
+            fails.append(name)
+
+    chk("None 判失败", bars_ok(None), False)
+    chk("空 dict 判失败", bars_ok({}), False)
+    chk("无 close 键判失败", bars_ok({"open": [1, 2]}), False)
+    chk("1 根（东财限流的典型响应）判失败", bars_ok({"close": [1.0]}), False)
+    chk("19 根判失败（不足 MA20）", bars_ok({"close": [1.0] * 19}), False)
+    chk("20 根判成功（够 MA20+RSI14）", bars_ok({"close": [1.0] * 20}), True)
+    chk("300 根判成功", bars_ok({"close": [1.0] * 300}), True)
+
+    print()
+    if fails:
+        print(f"FAILED {len(fails)}: {fails}")
+        return 1
+    print("ALL PASS (7/7)")
     return 0
 
 

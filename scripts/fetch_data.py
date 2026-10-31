@@ -41,10 +41,14 @@ SESSION.headers.update({"User-Agent": UA, "Accept": "application/json,text/plain
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 OUT_FILE = os.path.join(OUT_DIR, "market.json")
+# K 线序列单独成文件。实测原 market.json 1.85MB，其中 99% 是 series：
+# 仪表盘、分条图、表格只需要 5KB 的分数与 heatmap，却要等整包下载解析完才能显示。
+SERIES_FILE = os.path.join(OUT_DIR, "series.json")
 
 # 历史快照保留天数：超过则删除（0 或负数表示不做清理）。
-# 每次快照约 1.2MB，不设上限时仓库会无限膨胀（2026-10 已达 59 份/58MB）。
-# 更早的快照请另行归档到仓库之外，不要留在 git 里。
+# 2026-10-31 起快照已剥离 K 线序列（原 1.2MB/份 → 约 5KB/份），
+# 因此保留期从 30 天放宽到 365 天：一年约 1.8MB，可换来足量的回测样本。
+# 注意：剥离之前的旧快照仍是 1.2MB/份，会在到期后自然淘汰。
 def _env_int(name, default):
     """读整型环境变量；缺失或非法值都退回默认，避免一个拼错的值让整轮抓取崩掉。"""
     raw = os.environ.get(name)
@@ -57,7 +61,49 @@ def _env_int(name, default):
         return default
 
 
-HISTORY_KEEP_DAYS = _env_int("HISTORY_KEEP_DAYS", 30)
+HISTORY_KEEP_DAYS = _env_int("HISTORY_KEEP_DAYS", 365)
+
+# 东财连续请求的最小间隔（秒）。见 fetch_eastmoney_kline 里的说明。
+try:
+    EM_MIN_INTERVAL = float(os.environ.get("EM_MIN_INTERVAL") or 0.8)
+except (TypeError, ValueError):
+    EM_MIN_INTERVAL = 0.8
+_EM_LAST_CALL = 0.0
+
+# 一根 K 线都算不出的「成功响应」等于失败：东财被限流时会返回只含 1 根 K 线的
+# 残缺响应（HTTP 200、data.klines 长度 1），此时不能当成抓到数据。
+# 20 根是能算 MA20 + RSI14 的下限，与 build_series 的 usable 判据保持一致。
+MIN_BARS_OK = 20
+
+
+# ----------------------------------------------------------------------------
+# 维度权重
+# ----------------------------------------------------------------------------
+# 7 个维度，合计 1.00。
+#
+# 演进史（勿删，避免下次又凭直觉把噪声维度加回来）：
+#   · credit(0.06) / macro(0.08)：随 FRED 依赖一并移除（本项目不使用任何密钥数据源）。
+#   · volume(0.07)：80 份快照 σ=0.180、平均只维持 1.8 天、79 天翻转 42 次、fwd21 r=+0.122。
+#     「价跌放量=派发」这组后续收益反而 +1.42%（上涨 100%），符号假设本身不成立。
+#   · volatility(0.06)：与美股 r=+0.82、与情绪 r=+0.82。VIX 实际只落在 14~21，
+#     (20−VIX)/22 只用到 [−1,1] 区间的 15%，σ 低是公式造成的，不是市场没给信息；
+#     但把它按实测方向修正后放回投票，会与美股在加权里互相对冲，σ 反而从 0.097 掉到 0.083。
+#     对冲掉的不是风险，是信息 → 不投票。
+#   · valuation(0.09)：真实 CAPE/ERP 命中 0/80，100% 走「价格/200MA」兜底，
+#     该代理与 20 日动量 r=+0.65，本质是趋势延伸度；且常年输出 −0.15~−0.35 的负分，
+#     实测制造了 12 次虚假空头共识 → 移出投票，降为 structural 层的一句价格位置描述。
+#   · breadth(0.08)：A股侧（东财涨跌家数）命中 0/80，「跨市场复合」从未生效；
+#     剩下的美股侧 RSP/SPY 与 A股、韩股均为负相关，语义上更接近「小盘 vs 大盘风格差」。
+#
+# 三次修订后：13 → 11 → 9 → 7 维。每一步都留了实测依据，不是越删越顺手。
+# 剩余 7 项按原相对比例等比放大到 1.00，彼此话语权不变。
+WEIGHTS = {"us_stocks": 0.24, "cn_stocks": 0.20, "kr_stocks": 0.10,
+           "bonds": 0.14, "gold": 0.08, "sentiment": 0.16, "yen_carry": 0.08}
+
+
+def bars_ok(raw):
+    """抓回来的原始序列是否够算出指标。None / 空 / 根数不足一律 False。"""
+    return bool(raw) and len(raw.get("close") or []) >= MIN_BARS_OK
 
 
 # ----------------------------------------------------------------------------
@@ -220,14 +266,12 @@ def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
 
-def composite_score(close, ma20, ma60, ma200, rsi_arr, macd_hist):
-    """综合 MA 排列 / RSI / MACD 得出 [-1,1] 的牛熊分。"""
-    n = len(close)
-    if n < 2:
+def composite_score_at(close, ma20, ma60, ma200, rsi_arr, macd_hist, i):
+    """第 i 根 K 线上的牛熊分。抽出来是为了让历史回测能逐日复现同一套公式，
+    否则回测用的分和线上显示的分不是同一个东西，标定出来的阈值没有意义。"""
+    if i < 1 or i >= len(close):
         return 0.0
-    i = n - 1
     # MA 排列分
-    ma_score = 0.0
     c, m20, m60, m200 = close[i], ma20[i], ma60[i], ma200[i]
     if None in (m20, m60, m200) or c is None:
         ma_score = 0.0
@@ -242,6 +286,14 @@ def composite_score(close, ma20, ma60, ma200, rsi_arr, macd_hist):
     ref = c if c else 1
     macd_score = clamp(h / (0.02 * ref))
     return round(0.5 * ma_score + 0.25 * rsi_score + 0.25 * macd_score, 3)
+
+
+def composite_score(close, ma20, ma60, ma200, rsi_arr, macd_hist):
+    """综合 MA 排列 / RSI / MACD 得出 [-1,1] 的牛熊分（取最后一根）。"""
+    n = len(close)
+    if n < 2:
+        return 0.0
+    return composite_score_at(close, ma20, ma60, ma200, rsi_arr, macd_hist, n - 1)
 
 
 def verdict_from_score(s):
@@ -355,6 +407,15 @@ def fetch_yahoo(symbol, rng="1y"):
 # ----------------------------------------------------------------------------
 def fetch_eastmoney_kline(secid, beg="20240101", lmt=300):
     """东财日线。lmt 为返回的最大根数；长历史回测可显式传大值（如 100000）。"""
+    # 东财 push2his 对连续请求很敏感：4 个指数连打时常有 2~3 个被断开连接
+    # （2026-10-31 实测 4 次跑批里 3 次出现）。加一个全局最小间隔，
+    # 代价是每次跑批多睡几秒，换来 A股 四指数齐全。
+    global _EM_LAST_CALL
+    gap = time.time() - _EM_LAST_CALL
+    if gap < EM_MIN_INTERVAL:
+        time.sleep(EM_MIN_INTERVAL - gap)
+    _EM_LAST_CALL = time.time()
+
     url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
     params = {
         "secid": secid,
@@ -404,11 +465,11 @@ def fetch_quote(yahoo_symbol=None, em_secid=None, rng="1y"):
     返回与 fetch_yahoo/fetch_eastmoney_kline 一致的 {dates,open,high,low,close,vol} 或 None。"""
     if em_secid:
         raw = fetch_eastmoney_kline(em_secid)
-        if raw and raw.get("close"):
+        if bars_ok(raw):
             return raw
     if yahoo_symbol:
         raw = fetch_yahoo(yahoo_symbol, rng=rng)
-        if raw:
+        if bars_ok(raw):
             return raw
     return None
 
@@ -673,6 +734,27 @@ def series_indicators_block(s):
     return {"ma": _r2(ma_s), "rsi": _r2(rsi_s), "macd": _r2(macd_s)}
 
 
+def extract_series(payload):
+    """把 K 线序列从主 payload 里剥出来，就地返回 {market_key: series}。
+
+    剥离后 payload 只剩「分数 + heatmap + 结论」，实测 5KB（原 1.85MB）。
+    前端首屏只吃这份，K 线图等首帧渲染完再单独拉 series.json。
+    历史快照也走同样处理 —— 5KB/份才撑得起 365 天留存。"""
+    out = {}
+    for key, mk in (payload.get("markets") or {}).items():
+        s = mk.pop("series", None)
+        if s:
+            out[key] = s
+    return out
+
+
+def write_json_compact(path, obj):
+    """紧凑写法。原来 indent=2 把 724KB 的数据撑成 1.85MB，
+    多出来的全是缩进空格 —— 对机器读没任何意义，只是让人肉眼看 diff 方便。"""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def payload_coverage(p):
     """数据覆盖度 = (可用维度数, 可用子指标数)。
 
@@ -794,6 +876,9 @@ def main():
     # 序列本身仍完整构建（K 线/均线/RSI 照旧），只是 score 换成变化量口径。
     us10y_raw = fetch_yahoo("^TNX")
     us10y = None
+    if not bars_ok(us10y_raw):
+        print(f"  [WARN] 美债10Y 只拿到 {len((us10y_raw or {}).get('close') or [])} 根 K 线，跳过")
+        us10y_raw = None
     if us10y_raw:
         us10y = build_series("美债10Y", "^TNX", us10y_raw)
         if us10y:
@@ -809,10 +894,18 @@ def main():
                          ("1.000688", "000688.SS", "科创50"),
                          ("0.399006", "399006.SZ", "创业板指")):
         raw = fetch_eastmoney_kline(secid)
-        if raw is None:
-            raw = fetch_yahoo(yh)   # 多源容错：东财不可达时回退
-            if raw:
-                print(f"  [FALLBACK] {nm} 改用 Yahoo {yh}")
+        # 关键：不只是「完全失败」才回退。东财被限流时返回 HTTP 200 但只给 1 根
+        # K 线，raw 非 None，旧逻辑会把这 1 根送进 build_series 后被判 unusable
+        # 丢弃 —— A股 维度就悄悄退化成单腿（2026-10-31 实测 4 次跑批里 3 次）。
+        if not bars_ok(raw):
+            em_n = len((raw or {}).get("close") or [])
+            yh_raw = fetch_yahoo(yh)   # 多源容错：东财不可达/残缺时回退
+            if bars_ok(yh_raw):
+                raw = yh_raw
+                print(f"  [FALLBACK] {nm} 东财仅 {em_n} 根 → 改用 Yahoo {yh} "
+                      f"({len(yh_raw['close'])} 根)")
+            elif em_n or raw is None:
+                print(f"  [WARN] {nm} 东财 {em_n} 根、Yahoo 也不可用")
         s = build_series(nm, secid, raw) if raw else None
         if s is None:
             print(f"  [SKIP] {nm} 抓取失败或清洗后无有效 K 线")
@@ -845,9 +938,8 @@ def main():
     # 实测 80 份快照 σ=0.180、86 天翻转 42 次、与综合分 r=−0.12 —— 是噪声不是信号。
     # 量价配合在指数层面本来就不稳（ETF 申赎、衍生品对冲都会扭曲成交量），
     # 与其留一个每天乱跳的 7% 权重，不如把 volScore 保留在序列里供 K 线图看。
-    all_vol = [s["volScore"] for s in (us_series + cn_series) if s.get("volScore") is not None]
-    if all_vol:
-        print(f"  [--] 量价配合参考值 {round(sum(all_vol) / len(all_vol), 3)}（不参与综合分）")
+    # 原先这里还会把美股+A股的 volScore 等权平均后 print 一行「参考值」——
+    # 那个数不进 payload、没有任何消费者，纯属自我安慰，已删除。
 
     # ---------- 广度：已整体移除（2026-10-31 第三次修订） ----------
     # 80 份快照实测：
@@ -980,26 +1072,8 @@ def main():
         print("  [SKIP] USD/JPY 抓取失败")
 
     # ---------- 加权综合（按可用维度归一化） ----------
-    # 9 个维度，合计 1.00。
-    #
-    # 演进史（勿删，避免下次又凭直觉把噪声维度加回来）：
-    #   · credit(0.06) / macro(0.08)：随 FRED 依赖一并移除（本项目不使用任何密钥数据源）。
-    #   · volume(0.07)：80 份快照 σ=0.180、平均只维持 1.8 天、79 天翻转 42 次、fwd21 r=+0.122。
-    #     「价跌放量=派发」这组后续收益反而 +1.42%（上涨 100%），符号假设本身不成立。
-    #   · volatility(0.06)：与美股 r=+0.82、与情绪 r=+0.82。VIX 实际只落在 14~21，
-    #     (20−VIX)/22 只用到 [−1,1] 区间的 15%，σ 低是公式造成的，不是市场没给信息；
-    #     但把它按实测方向修正后放回投票，会与美股在加权里互相对冲，σ 反而从 0.097 掉到 0.083。
-    #     对冲掉的不是风险，是信息 → 不投票。
-    #   · valuation(0.09)：真实 CAPE/ERP 命中 0/80，100% 走「价格/200MA」兜底，
-    #     该代理与 20 日动量 r=+0.65，本质是趋势延伸度；且常年输出 −0.15~−0.35 的负分，
-    #     实测制造了 12 次虚假空头共识 → 移出投票，降为 structural 层的一句价格位置描述。
-    #   · breadth(0.08)：A股侧（东财涨跌家数）命中 0/80，「跨市场复合」从未生效；
-    #     剩下的美股侧 RSP/SPY 与 A股、韩股均为负相关，语义上更接近「小盘 vs 大盘风格差」。
-    #
-    # 三次修订后：13 → 11 → 9 → 7 维。每一步都留了实测依据，不是越删越顺手。
-    # 剩余 7 项按原相对比例等比放大到 1.00，彼此话语权不变。
-    WEIGHTS = {"us_stocks": 0.24, "cn_stocks": 0.20, "kr_stocks": 0.10,
-               "bonds": 0.14, "gold": 0.08, "sentiment": 0.16, "yen_carry": 0.08}
+    # 权重定义已上移到模块级 WEIGHTS（scripts/calibrate.py 要复用同一份，
+    # 否则回测和线上用的不是一套权重，标定出来的阈值没有意义）。
     present = {k: v for k, v in dims.items() if k in WEIGHTS}
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
@@ -1100,7 +1174,10 @@ def main():
             "us_indices": "Yahoo Finance",
             "cn_indices": "东方财富 push2his / Yahoo 回退",
             "us_10y": "Yahoo Finance ^TNX",
-            "cn_10y": "东方财富 datacenter (best-effort)",
+            # 这条腿长期不可达（datacenter 接口返回 result=None）。把本次实际情况
+            # 写进 payload，读者才不会以为债券维度是中美两条腿的平均。
+            "cn_10y": ("东方财富 datacenter (best-effort)" if cn10y is not None
+                       else "东方财富 datacenter（本次不可达，债券仅用美债10Y单腿）"),
             "kr_indices": "Yahoo Finance ^KS11",
             "gold": "Yahoo Finance GC=F",
             "fx": "Yahoo Finance JPY=X",
@@ -1156,10 +1233,23 @@ def main():
               f"{new_cov[0]}/{new_cov[1]}），疑似数据源抖动；"
               f"保留上一份 market.json 不覆盖 ==")
 
+    # 无论本次是否被采纳，都先把 K 线剥出来：历史快照同样只留分数与 heatmap，
+    # 否则 365 天留存会把仓库撑到几百 MB。覆盖率判定只看 heatmap，不受影响。
+    series_map = extract_series(payload)
+
     if not keep_prev:
-        with open(OUT_FILE, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"== 完成，写入 {OUT_FILE} | 综合分 {overall} {payload['overall']['verdict']}"
+        write_json_compact(OUT_FILE, payload)
+        if series_map:
+            write_json_compact(SERIES_FILE, {
+                "generated_at": payload["generated_at"],
+                "as_of": freshness.get("as_of"),
+                "markets": series_map,
+            })
+        print(f"== 完成，写入 {os.path.basename(OUT_FILE)}"
+              f"（{os.path.getsize(OUT_FILE)/1024:.1f} KB）"
+              f" + {os.path.basename(SERIES_FILE)}"
+              f"（{os.path.getsize(SERIES_FILE)/1024:.0f} KB）"
+              f" | 综合分 {overall} {payload['overall']['verdict']}"
               f" | 共识 {bull_n}多/{neutral_n}中/{bear_n}空 → {consensus_verdict} ==")
 
     # ---------- 历史快照归档（供历史回看 / 回测基线 / 失败回滚） ----------
@@ -1195,9 +1285,8 @@ def main():
             print(f"== 快照 {os.path.basename(snap)} 覆盖度更高"
                   f"（{snap_cov[0]}/{snap_cov[1]} > {new_cov[0]}/{new_cov[1]}），不覆盖 ==")
         else:
-            with open(snap, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            print(f"== 已归档快照 {snap} ==")
+            write_json_compact(snap, payload)
+            print(f"== 已归档快照 {snap}（{os.path.getsize(snap)/1024:.1f} KB）==")
         removed = prune_history(hist_dir, HISTORY_KEEP_DAYS)
         if removed:
             print(f"== 快照保留 {HISTORY_KEEP_DAYS} 天，清理 {len(removed)} 份过期快照"
