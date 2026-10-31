@@ -27,13 +27,40 @@ import datetime as dt
 from collections import defaultdict
 
 from fetch_data import (sma, rsi, macd, composite_score,
-                        verdict_from_score, fetch_yahoo)
+                        verdict_from_score, fetch_yahoo,
+                        fetch_eastmoney_kline, EM_SECID)
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 OUT_FILE = os.path.join(OUT_DIR, "backtest.json")
 OUT_FILE_OOS = os.path.join(OUT_DIR, "backtest_oos.json")
 
 VERDICT_LABEL = {"bull": "牛市", "neutral": "震荡", "bear": "熊市"}
+LONG_HIST_BEG = "20050101"   # 东财长历史起点（够覆盖 --multi 的全部窗口）
+
+_last_source = ""
+
+
+def fetch_long_history(symbol, years):
+    """优先 Yahoo；Yahoo 403/缺数据时回退东财长历史（仅限 EM_SECID 里映射过的标的）。
+
+    Yahoo 对非浏览器来源常年 403，回退前 backtest 会整条断掉——而历史数据本身
+    与"今天是否能取到"无关，故加此兜底。返回 (raw, source)；均失败返回 (None, "")。
+    """
+    global _last_source
+    raw = fetch_yahoo(symbol, rng=f"{years}y")
+    if raw:
+        _last_source = "yahoo"
+        return raw, _last_source
+    secid = EM_SECID.get(symbol)
+    if not secid:
+        print(f"  [WARN] {symbol} 无东财映射，无法回退长历史")
+        return None, ""
+    print(f"  [INFO] Yahoo 取 {symbol} 失败，回退东财长历史（{secid}，自 {LONG_HIST_BEG}）")
+    raw = fetch_eastmoney_kline(secid, beg=LONG_HIST_BEG, lmt=100000)
+    if raw:
+        _last_source = "eastmoney"
+        return raw, _last_source
+    return None, ""
 
 
 def pearson(xs, ys):
@@ -71,14 +98,15 @@ def rolling_eval(close, dates, horizon):
         nxt = close[i + k]
         if nxt is None:
             continue
-        records.append((verdict_from_score(score), score, nxt / c - 1))
+        records.append((verdict_from_score(score), score, nxt / c - 1, dates[i]))
     return records
 
 
 def aggregate(records):
+    # 记录形如 (verdict, score, fwd_return, date)；用下标取值以便兼容不带日期的调用方
     groups = defaultdict(list)
-    for v, s, f in records:
-        groups[v].append((s, f))
+    for rec in records:
+        groups[rec[0]].append((rec[1], rec[2]))
     summary = {}
     for v, items in groups.items():
         scores = [x[0] for x in items]
@@ -89,14 +117,33 @@ def aggregate(records):
             "avg_fwd_return_pct": round(sum(fwds) / len(fwds) * 100, 2),
             "hit_rate_pct": round(sum(1 for f in fwds if f > 0) / len(fwds) * 100, 1),
         }
-    corr = pearson([x[1] for x in records], [x[2] for x in records])
-    overall_fwd = sum(x[2] for x in records) / len(records)
+    corr = pearson([rec[1] for rec in records], [rec[2] for rec in records])
+    overall_fwd = sum(rec[2] for rec in records) / len(records)
     return summary, corr, round(overall_fwd * 100, 2)
+
+
+def dedupe_by_date(records):
+    """按决策日去重，保留首次出现的记录。
+
+    多窗口回测里后两段有重叠，同一交易日会被算两次；而两次的分数并不相同——
+    因为每个窗口只用**窗口内**的历史算均线，同一天在更晚的窗口里历史更短。
+    去重时保留先出现的（其窗口起点更早、用于判定的历史更长）。
+    """
+    seen = set()
+    out = []
+    for rec in records:
+        d = rec[3] if len(rec) > 3 else None
+        if d is not None:
+            if d in seen:
+                continue
+            seen.add(d)
+        out.append(rec)
+    return out
 
 
 def run(symbol, years, horizon):
     rng = f"{years}y"
-    raw = fetch_yahoo(symbol, rng=rng)
+    raw, src = fetch_long_history(symbol, years)
     if not raw:
         print(f"  [FAIL] {symbol} 抓取失败，无法回测")
         return None
@@ -107,6 +154,7 @@ def run(symbol, years, horizon):
     summary, corr, mean_fwd = aggregate(records)
     return {
         "symbol": symbol, "years": years, "horizon_days": horizon,
+        "data_source": src or rng,
         "n_records": len(records),
         "generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "summary_by_verdict": summary,
@@ -117,7 +165,7 @@ def run(symbol, years, horizon):
 
 def run_oos(symbol, windows, horizon):
     """覆盖多个历史区间（含回撤窗口）的样本外校验。"""
-    raw = fetch_yahoo(symbol, rng="20y")
+    raw, src = fetch_long_history(symbol, 20)
     if not raw:
         print(f"  [FAIL] {symbol} 长历史抓取失败，无法做样本外回测")
         return None
@@ -147,15 +195,31 @@ def run_oos(symbol, windows, horizon):
     if not all_records:
         return None
     summary, corr, mean_fwd = aggregate(all_records)
+    uniq = dedupe_by_date(all_records)
+    u_summary, u_corr, u_mean_fwd = aggregate(uniq)
     return {
         "symbol": symbol, "horizon_days": horizon,
+        "data_source": src or "yahoo",
+        "data_range": (f"{raw['dates'][0]} ~ {raw['dates'][-1]}"
+                       if raw.get("dates") else None),
         "windows": window_reports,
         "combined": {
             "n_records": len(all_records),
+            "n_records_unique": len(uniq),
             "summary_by_verdict": summary,
             "score_forward_corr": corr,
             "mean_fwd_return_pct": mean_fwd,
         },
+        # 去重后（同一决策日只保留一次）的指标，用于判断结论是否被重叠放大
+        "combined_unique": {
+            "n_records": len(uniq),
+            "summary_by_verdict": u_summary,
+            "score_forward_corr": u_corr,
+            "mean_fwd_return_pct": u_mean_fwd,
+        },
+        "overlap_note": ("combined 为各窗口记录直接拼接，后段窗口间存在重叠交易日，"
+                         "同一决策日会被重复计入且因窗口内历史长度不同而得分略有差异；"
+                         "combined_unique 为按决策日去重后的口径。"),
         "generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -164,7 +228,12 @@ def print_summary(title, res):
     if not res:
         return
     print(f"\n=== {title} ===")
-    print(f"有效样本：{res.get('n_records')} 个交易决策点")
+    n = res.get("n_records")
+    nu = res.get("n_records_unique")
+    if nu is not None and nu != n:
+        print(f"有效样本：{n} 个记录（含窗口重叠）｜按决策日去重后 {nu} 个")
+    else:
+        print(f"有效样本：{n} 个交易决策点")
     print(f"{'结论':<8}{'样本数':>8}{'平均分':>10}{'平均前瞻收益%':>16}{'上涨命中率%':>14}")
     for v in ("bull", "neutral", "bear"):
         s = res.get("summary_by_verdict", {}).get(v)
@@ -212,6 +281,8 @@ def main():
         if not res:
             return
         print_summary(f"样本外聚合 ({args.symbol})", res["combined"])
+        if res.get("combined_unique"):
+            print_summary(f"样本外聚合 · 按决策日去重 ({args.symbol})", res["combined_unique"])
         interpret(res["combined"])
         os.makedirs(OUT_DIR, exist_ok=True)
         with open(OUT_FILE_OOS, "w", encoding="utf-8") as f:

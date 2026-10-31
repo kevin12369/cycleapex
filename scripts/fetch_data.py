@@ -341,7 +341,8 @@ def fetch_yahoo(symbol, rng="1y"):
 # ----------------------------------------------------------------------------
 # 数据源：东方财富 K 线（A股指数 / 中概）
 # ----------------------------------------------------------------------------
-def fetch_eastmoney_kline(secid, beg="20240101"):
+def fetch_eastmoney_kline(secid, beg="20240101", lmt=300):
+    """东财日线。lmt 为返回的最大根数；长历史回测可显式传大值（如 100000）。"""
     url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
     params = {
         "secid": secid,
@@ -351,7 +352,7 @@ def fetch_eastmoney_kline(secid, beg="20240101"):
         "end": "20500101",
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56",
-        "lmt": "300",
+        "lmt": str(lmt),
     }
     r = http_get(url, params=params)
     if not r:
