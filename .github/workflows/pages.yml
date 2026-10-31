@@ -29,14 +29,18 @@ jobs:
 
       - name: Assemble site (排除 history/scripts/.github，避免发布 88MB 快照)
         run: |
-          mkdir -p dist/assets dist/data
+          mkdir -p dist/assets/vendor dist/data
           cp index.html dist/
           [ -f report.html ] && cp report.html dist/ || true
           cp assets/app.js assets/style.css dist/assets/
+          # ECharts 已本地化，必须一起发布，否则图表区全空
+          cp assets/vendor/echarts.min.js dist/assets/vendor/
           [ -f .nojekyll ] && cp .nojekyll dist/ || true
           # 前端实际只 fetch 这两个数据文件（见 assets/app.js 的 fetch 调用）
           cp data/market.json dist/data/
           cp data/paradigm.json dist/data/
+          # K 线序列单独一份（约 700KB），前端首帧之后才拉；漏了它图就空着
+          [ -f data/series.json ] && cp data/series.json dist/data/ || true
           # status.json 不是给前端用的，是给外部监控/告警读的（dims_available、
           # data_as_of、write_skipped）。之前漏了这一行，线上一直 404。
           [ -f data/status.json ] && cp data/status.json dist/data/ || true

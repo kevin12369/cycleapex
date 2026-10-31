@@ -723,26 +723,97 @@
 
   // ---------------- 启动 ----------------
   const isFileProtocol = location.protocol === "file:";
+
+  // K 线序列已从 market.json 剥出来单独成文件（data/series.json）。
+  // 原因：整包 1.85MB 里 99% 是 OHLC+指标，而首屏要看的仪表盘、分条图、表格
+  // 只需要 5KB 的分数。现在首屏先渲染完，K 线图等首帧之后再单独拉。
+  function hasInlineSeries() {
+    const m = DATA.markets || {};
+    return Object.keys(m).some((k) => Array.isArray(m[k].series) && m[k].series.length);
+  }
+
+  function mergeSeries(doc) {
+    const sm = (doc && doc.markets) || {};
+    Object.keys(sm).forEach((k) => {
+      if (DATA.markets && DATA.markets[k]) DATA.markets[k].series = sm[k];
+      else if (DATA.markets) DATA.markets[k] = { label: k, series: sm[k] };
+    });
+  }
+
+  // 注意：klineChart / indChart 在模块加载时已 echarts.init()，
+  // 绝不能对它们的容器写 innerHTML —— 那会把 ECharts 持有的 canvas 抹掉，
+  // 之后 setOption 全部落到孤儿实例上，页面就永远停在占位文字。
+  // 一律走 ECharts 自己的 loading / title。
+  function chartLoading(on, text) {
+    [klineChart, indChart].forEach((c) => {
+      try {
+        if (on) {
+          c.showLoading({ text: text || "加载中…", color: "#58a6ff",
+            textColor: "#8b949e", maskColor: "transparent",
+            spinnerRadius: 8, lineWidth: 2 });
+        } else {
+          c.hideLoading();
+        }
+      } catch (e) { /* 实例未就绪时忽略 */ }
+    });
+  }
+
+  function chartMessage(text) {
+    [klineChart, indChart].forEach((c) => {
+      try {
+        c.hideLoading();
+        c.clear();
+        c.setOption({ title: { text: text, left: "center", top: "middle",
+          textStyle: { color: "#8b949e", fontSize: 13, fontWeight: "normal",
+            width: 360, overflow: "break", lineHeight: 22 } } });
+      } catch (e) { /* 忽略 */ }
+    });
+  }
+
+  function renderSeriesPart() {
+    ALL_SERIES = collectSeries();
+    chartLoading(false);
+    if (!ALL_SERIES.length) {
+      chartMessage("本次未取到可图表化的 K 线序列（数据源可能在休市且无历史回传）");
+      return;
+    }
+    buildSelectors();
+    renderKline();
+    renderIndicator();
+  }
+
   fetch("./data/market.json", { cache: "no-store" })
     .then((r) => r.json())
     .then((d) => {
       DATA = d;
+      // 第一步：只吃 5KB 的主数据，把结论/仪表盘/分条图/表格全部渲染出来。
       renderMeta(d);
-      ALL_SERIES = collectSeries();
-      if (!ALL_SERIES.length) {
-        document.getElementById("gauges").innerHTML =
-          '<div class="empty">未检索到可用序列，请检查数据源配置（见 README）。</div>';
-        return;
-      }
       renderGauges();
-      buildSelectors();
-      renderKline();
-      renderIndicator();
       renderHeatmap();
       renderTable();
       renderParadigm();
       renderWeightPanel();
       renderHero();
+
+      // 第二步：K 线序列。旧格式已内联在 market.json 里，直接用，不必再请求。
+      if (hasInlineSeries()) {
+        renderSeriesPart();
+        return;
+      }
+      chartLoading(true, "K 线数据加载中…");
+      fetch("./data/series.json", { cache: "no-store" })
+        .then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then((sd) => {
+          mergeSeries(sd);
+          renderSeriesPart();
+        })
+        .catch((e) => {
+          chartLoading(false);
+          chartMessage("K 线数据加载失败：" + e + "（上方结论与分条图不依赖它，可正常阅读）");
+        });
     })
     .catch((e) => {
       let msg;
