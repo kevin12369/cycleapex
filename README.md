@@ -48,6 +48,8 @@
 ├── .github/workflows/
 │   ├── update.yml          # 云端替补定时更新工作流（可选）
 │   └── pages.yml           # Pages 部署工作流（装配 dist，只发布站点必需文件）
+├── automation/
+│   └── local-update.md     # 平台侧本地自动化任务的追溯说明（任务本身不在仓库内）
 ├── requirements.txt        # Python 依赖（锁定版本）
 ├── LICENSE                 # MIT
 ├── .env.example            # 本地密钥模板（复制为 .env 填入，已被 gitignore）
@@ -84,15 +86,14 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
 > 公共仓库若 **60 天无任何活动**，GitHub 会自动禁用定时任务。`update.yml` 每次运行都会提交数据，
 > 只要保持运行即可持续保持活跃，无需额外的 keep-alive 提交。
 
-## 本地自动化（WorkBuddy，推荐）
+## 本地自动化（WorkBuddy）
 
-需求要求"定时触发 Agent 脚本"，且密钥应在本地不易泄露。首选用 **WorkBuddy 自动化**在本机定时运行，密钥读取自本地 `.env`，永不离开本机：
+需求要求"定时触发 Agent 脚本"，且密钥应在本地不易泄露。**WorkBuddy 自动化**在本机定时运行，密钥读取自本地 `.env`，永不离开本机。
+
+> 任务定义在 **WorkBuddy 平台侧，不在本仓库内**（`.workbuddy/` 已被 gitignore）。仓库里保留一份可追溯说明：[`automation/local-update.md`](./automation/local-update.md)，记录任务 id、调度、prompt 摘要、双轨关系与重建方法。
 
 1. 复制密钥模板：`cp .env.example .env`，填入 `FRED_KEY` / `TUSHARE_TOKEN`。
-2. 本仓库已内置名为 **「牛熊仪表盘-本地数据更新」** 的自动化任务（工作日 21:00 触发），其 prompt 概要：
-   - 用受管 Python 运行 `scripts/fetch_data.py` 生成 `data/market.json`；
-   - 密钥从本地 `.env` 读取，**绝不打印日志、绝不提交仓库**；
-   - 校验通过则提交并（可配置）推送到 GitHub Pages 分支；失败则保留上次成功文件。
+2. 平台侧任务 **「牛熊仪表盘-本地数据更新（上午9点）」**（id `automation-1783826526827`），工作日 **09:00 北京时间** 触发，运行 `scripts/fetch_data.py` 并在数据有实质变化时提交推送。
 3. 也可在 WorkBuddy 中手动「运行一次」立即刷新。
 
 > **为何本地优先**：公共仓库 GitHub Secrets 本身是安全的，但维护者误打印日志 / fork 误配是真实泄露路径；本地 `.env` 从结构上规避了"密钥进远端"这一环节。代价是调度依赖本机 / WorkBuddy 在线——可配置开机自启，或叠加 GitHub Actions 作为云端替补实现 24/7 不中断。
