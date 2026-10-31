@@ -32,9 +32,8 @@ jobs:
         run: pip install --no-cache-dir -r requirements.txt
 
       - name: Fetch & compute bull/bear data
-        env:
-          FRED_KEY: ${{ secrets.FRED_KEY }}            # 可选：启用美国宏观 + 中债10Y
-          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}  # 可选：A股兜底数据源
+        # 全部数据源免密钥，无需配置任何 Secret（原 FRED_KEY / TUSHARE_TOKEN 已随
+        # 信用、宏观两个维度一并移除，本项目不使用需要 API Key 的数据源）。
         run: python scripts/fetch_data.py
 
       - name: Commit updated data

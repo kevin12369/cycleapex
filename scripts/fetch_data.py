@@ -6,12 +6,13 @@
 由 GitHub Actions（或本地）定时运行，抓取多源免费公开数据，
 计算牛熊指标，输出静态 JSON 供 GitHub Pages 前端渲染。
 
-数据源（无需密钥即可运行核心部分）：
-  - Yahoo Finance (query1/query2) : 美股/部分指数、美债10Y(^TNX)、中概指数
-  - 东方财富 push2his              : A股指数(上证/沪深300) K线、中美国债收益率
-  - FRED (api_key 可选)            : 美国宏观 CPI / 失业率 / GDP
+数据源（全部免密钥）：
+  - Yahoo Finance (query1/query2) : 美股/部分指数、美债10Y(^TNX)、VIX、韩股、黄金、日元、广度代理
+  - 东方财富 push2his / push2      : A股指数 K 线、全市场涨跌家数、中美国债收益率
   - feargreedchart.com             : 美股恐惧贪婪指数 (CNN 同口径)
-  - Tushare (token 可选)           : A股指数兜底 + 中国宏观(需积分)
+  - multpl.com                     : Shiller CAPE / 盈利收益率
+
+注：本项目**不使用任何需要 API Key 的数据源**（原 FRED 信用/宏观维度已移除）。
 
 关键架构约束：
   GitHub Pages 是纯静态托管，浏览器前端无法直连上述 API（CORS / 反爬 / 密钥暴露）。
@@ -57,26 +58,6 @@ def _env_int(name, default):
 
 HISTORY_KEEP_DAYS = _env_int("HISTORY_KEEP_DAYS", 30)
 
-def load_env_local():
-    """无依赖加载项目根目录 .env，避免把密钥写进脚本或仓库。"""
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-    if not os.path.exists(env_path):
-        return
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k, v = k.strip(), v.strip().strip('"').strip("'")
-            if k and k not in os.environ:
-                os.environ[k] = v
-
-load_env_local()
-
-FRED_KEY = os.environ.get("FRED_KEY", "").strip()
-TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "").strip()
-
 
 # ----------------------------------------------------------------------------
 # 通用 HTTP 工具：指数退避 + 限流友好
@@ -87,14 +68,14 @@ _SECRET_RE = re.compile(
 
 
 def mask_secrets(text):
-    """把日志里可能出现的密钥参数值打码，避免密钥泄漏到控制台/自动化日志。"""
+    """把 URL 里可能出现的密钥参数值打码。
+
+    本项目已不使用任何密钥数据源，但保留这层防护：日后若接入带 key 的源，
+    异常日志里的 `api_key=xxx` 不会直接落到 Actions 日志或自动化输出里。
+    """
     if not text:
         return text
-    s = _SECRET_RE.sub(r"\1***", str(text))
-    for secret in (FRED_KEY, TUSHARE_TOKEN):
-        if secret and len(secret) >= 8:
-            s = s.replace(secret, "***")
-    return s
+    return _SECRET_RE.sub(r"\1***", str(text))
 
 
 def http_get(url, params=None, headers=None, retries=3, timeout=20):
@@ -286,16 +267,6 @@ def cape_score(c):
 def erp_score(e):
     """股权风险溢价(ERP)得分：相对债券越有吸引力越偏牛。"""
     return round(clamp((e - 2) / 4), 3)
-
-
-def oas_score(o):
-    """高收益债利差得分：利差越窄(信用风险低)越偏牛。"""
-    return round(clamp((4.5 - o) / 4), 3)
-
-
-def curve_score(s):
-    """收益率曲线(10Y-2Y)得分：倒挂(负)=衰退风险偏熊，陡峭(正)=偏牛。"""
-    return round(clamp(s / 2), 3)
 
 
 def vol_confirm_score(close, vol):
@@ -516,32 +487,6 @@ def fetch_us_breadth():
         "verdict": verdict_from_score(score),
     }
     return {"score": round(score, 3), "ratio_last": round(ratio[-1], 4), "series": series}
-
-
-# ----------------------------------------------------------------------------
-# 数据源：FRED 宏观
-# ----------------------------------------------------------------------------
-def fetch_fred(series_id, api_key, obs_count=120):
-    if not api_key:
-        return None
-    url = "https://api.stlouisfed.org/fred/series/observations"
-    params = {"series_id": series_id, "api_key": api_key,
-              "file_type": "json", "sort_order": "desc", "limit": obs_count}
-    r = http_get(url, params=params)
-    if not r:
-        return None
-    try:
-        obs = r.json()["observations"]
-        out = []
-        for o in obs:
-            v = o["value"]
-            if v in (".", "", None):
-                continue
-            out.append({"date": o["date"], "value": float(v)})
-        return list(reversed(out))
-    except Exception as e:  # noqa
-        print(f"  [WARN] FRED {series_id} 解析失败: {e}")
-        return None
 
 
 # ----------------------------------------------------------------------------
@@ -793,11 +738,6 @@ def main():
     if us10y:
         bond_series.append(us10y)
     cn10y_raw = fetch_china_10y_yield()
-    if cn10y_raw is None and FRED_KEY:
-        fred_cn = fetch_fred("IRLTLT01CNM156N", FRED_KEY, 300)  # FRED 中国10Y国债收益率
-        if fred_cn:
-            cn10y_raw = {"dates": [x["date"] for x in fred_cn],
-                         "close": [x["value"] for x in fred_cn]}
     if cn10y_raw:
         cn10y = build_series("中债10Y", "CN_10Y", cn10y_raw, invert=True)
         bond_series.append(cn10y)
@@ -841,32 +781,6 @@ def main():
     else:
         print("  [SKIP] VIX 抓取失败")
 
-    # ---------- 信用维度（HY OAS / 曲线，FRED 门控） ----------
-    if FRED_KEY:
-        hy = fetch_fred("BAMLH0A0HYM2", FRED_KEY, 250)   # ICE BofA 高收益债利差
-        t102 = fetch_fred("T10Y2Y", FRED_KEY, 250)        # 10Y-2Y 利差(倒挂=衰退信号)
-        credit_parts = []
-        if hy and hy[-1]["value"] is not None:
-            oas = hy[-1]["value"]
-            cs = oas_score(oas)
-            credit_parts.append(cs)
-            heatmap.append(["风险", "HY信用利差", round(cs, 3)])
-            print(f"  [OK] 信用 HY OAS {oas:.2f}% 分 {cs}")
-        if t102 and t102[-1]["value"] is not None:
-            spread = t102[-1]["value"]
-            cs2 = curve_score(spread)
-            credit_parts.append(cs2)
-            heatmap.append(["风险", "收益率曲线", round(cs2, 3)])
-            print(f"  [OK] 曲线 10Y-2Y {spread:.2f}% 分 {cs2}")
-        if credit_parts:
-            credit_score = round(sum(credit_parts) / len(credit_parts), 3)
-            add_dim("credit", "信用", credit_score, verdict_from_score(credit_score),
-                    "HY利差+曲线(倒挂)",
-                    {"hy_oas": (hy[-1]["value"] if hy else None),
-                     "curve": (t102[-1]["value"] if t102 else None)})
-    else:
-        print("  [INFO] 未配置 FRED_KEY，信用维度(HY利差/曲线)跳过（本地配置密钥后启用）")
-
     # ---------- 估值维度（CAPE + ERP，multpl 免密钥；失败回退价格代理） ----------
     cape_d = fetch_multpl("shiller-pe")
     ey_d = fetch_multpl("s-p-500-earnings-yield")
@@ -907,44 +821,6 @@ def main():
         add_dim("valuation", "估值", val_score, verdict_from_score(val_score),
                 f"{val_method} · {tag}",
                 {"cape": cape, "erp": erp, "method": val_method})
-
-    # ---------- 宏观维度（FRED 门控） ----------
-    macro = {}
-    if FRED_KEY:
-        cpi = fetch_fred("CPIAUCSL", FRED_KEY, 24)
-        unr = fetch_fred("UNRATE", FRED_KEY, 13)
-        gdp = fetch_fred("GDP", FRED_KEY, 12)
-        parts = []
-        notes = {}
-        if cpi and len(cpi) >= 13:
-            yoy = (cpi[-1]["value"] / cpi[-13]["value"] - 1) * 100
-            parts.append(clamp(-abs(yoy - 2) / 5))
-            notes["CPI同比"] = round(yoy, 2)
-        if unr:
-            uv = unr[-1]["value"]
-            parts.append(clamp((6 - uv) / 4))
-            notes["失业率"] = uv
-        if gdp and len(gdp) >= 5:
-            yoy = (gdp[-1]["value"] / gdp[-5]["value"] - 1) * 100
-            parts.append(clamp((yoy - 2) / 4))
-            notes["GDP同比"] = round(yoy, 2)
-        if parts:
-            us_macro_score = round(sum(parts) / len(parts), 3)
-            macro["us"] = {"score": us_macro_score,
-                           "verdict": verdict_from_score(us_macro_score),
-                           "notes": notes}
-            print(f"  [OK] 美国宏观 分 {us_macro_score} {notes}")
-    else:
-        print("  [INFO] 未配置 FRED_KEY，宏观维度跳过")
-
-    if macro:
-        mscore = round(sum(v["score"] for v in macro.values()) / len(macro), 3)
-        markets["macro"] = {
-            "label": "宏观", "score": mscore, "verdict": verdict_from_score(mscore),
-            "sub": " · ".join(f"{k} {round(v['score']*100)}" for k, v in macro.items()),
-            "detail": macro,
-        }
-        dims["macro"] = mscore   # 计入加权综合（修复：原仅写入 markets 未进 dims）
 
     # ---------- 韩国 KOSPI（全球风险 / 半导体周期领先指标，Yahoo 免密钥） ----------
     ks_raw = fetch_quote("^KS11", EM_SECID.get("^KS11"))
@@ -1000,10 +876,12 @@ def main():
         print("  [SKIP] USD/JPY 抓取失败")
 
     # ---------- 加权综合（按可用维度归一化） ----------
+    # 11 个维度，合计 0.89；运行时按「实际可用维度」归一化，故绝对值和不必等于 1。
+    # 原 credit(0.06) / macro(0.08) 已随 FRED 依赖一并移除（本项目不使用密钥数据源）。
     WEIGHTS = {"us_stocks": 0.15, "cn_stocks": 0.13, "kr_stocks": 0.06,
                "bonds": 0.09, "gold": 0.05, "sentiment": 0.10,
-               "volatility": 0.06, "credit": 0.06, "valuation": 0.07,
-               "macro": 0.08, "volume": 0.07, "breadth": 0.06, "yen_carry": 0.05}
+               "volatility": 0.06, "valuation": 0.07,
+               "volume": 0.07, "breadth": 0.06, "yen_carry": 0.05}
     present = {k: v for k, v in dims.items() if k in WEIGHTS}
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
@@ -1042,7 +920,7 @@ def main():
             "us_indices": "Yahoo Finance",
             "cn_indices": "东方财富 push2his / Yahoo 回退",
             "us_10y": "Yahoo Finance ^TNX",
-            "cn_10y": "东方财富 datacenter (best-effort) / FRED IRLTLT01CNM156N",
+            "cn_10y": "东方财富 datacenter (best-effort)",
             "vix": "Yahoo Finance ^VIX",
             "kr_indices": "Yahoo Finance ^KS11",
             "gold": "Yahoo Finance GC=F",
@@ -1050,8 +928,6 @@ def main():
             "fng": "feargreedchart.com",
             "valuation": "multpl.com (Shiller CAPE / 盈利收益率)",
             "breadth": "东方财富 push2 全市场涨跌家数 + Yahoo RSP/SPY 等权-市值差 (best-effort)",
-            "credit_curve_macro": ("FRED (BAMLH0A0HYM2 / T10Y2Y / CPI / UNRATE / GDP)"
-                                   if FRED_KEY else "未配置 FRED_KEY"),
         },
         "markets": markets,
         "overall": {"score": overall, "verdict": verdict_from_score(overall)},
@@ -1065,7 +941,6 @@ def main():
                 "债券维度对收益率取反（收益率上行=债市走熊）",
                 "情绪维度 = (恐贪指数-50)/50",
                 "波动率维度 VIX 低=平静偏牛、高=恐慌偏熊",
-                "信用维度 HY利差收窄=偏牛、曲线倒挂=偏熊",
                 "估值维度 CAPE 越高越贵(未来回报预期越低)、ERP 越高股票越具吸引力",
                 "量能维度 = 价涨且放量→配合(正)、价跌且放量→派发(负)，跨美股/A股聚合",
                 "广度维度 = 跨市场复合：A股(涨家数-跌家数)/(涨+跌+平) 等权 0.5 + 美股等权ETF(RSP)对市值ETF(SPY)的月度动量(等权跑赢=宽度扩散)，各0.5",
