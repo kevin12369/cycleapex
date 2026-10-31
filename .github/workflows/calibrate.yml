@@ -1,0 +1,56 @@
+name: Calibrate Threshold
+
+# 只在手动触发时跑：综合分阈值的标定是高成本的（拉十年日线、逐日重算），
+# 且结论需要人工判读，不能挂成定时任务自动改线上阈值。
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "回溯年数"
+        required: false
+        default: "10"
+      horizon:
+        description: "前瞻交易日数"
+        required: false
+        default: "21"
+
+permissions:
+  contents: write
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run calibration
+        run: |
+          python scripts/calibrate.py \
+            --years "${{ github.event.inputs.years || 10 }}" \
+            --horizon "${{ github.event.inputs.horizon || 21 }}"
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f data/calibration.json ]; then
+            git add data/calibration.json
+            git diff --staged --quiet || git commit -m "data: 综合分阈值标定结果 $(date -u +%FT%TZ)"
+            git push
+          else
+            echo "没有产出 calibration.json，跳过提交"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calibration
+          path: data/calibration.json
+          if-no-files-found: warn
