@@ -135,9 +135,20 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
 .hero-consensus .cv.bear { background: rgba(31,184,107,.18); color: var(--bear); }
 .hero-consensus .cv.neutral { background: rgba(212,160,23,.18); color: var(--neutral); }
 .hero-consensus .vote { white-space: nowrap; }
-/* 风险温度计（VIX，不参与综合分） */
-.hero-gauge { margin-top: 6px; font-size: 12px; color: var(--muted); }
-.hero-gauge b { color: var(--text); font-size: 13px; }
+/* 数据状态徽章：灰=最新 / 黄=休市 / 橙=陈旧。
+   刻意避开 --bull(红) 与 --bear(绿)——那两个是 A 股涨跌色，
+   用来标「数据新不新」会被误读成行情方向。 */
+.badge.fresh-live { background: rgba(139,148,158,.16); color: var(--muted); }
+.badge.fresh-closed { background: rgba(212,160,23,.16); color: var(--neutral); }
+.badge.fresh-stale { background: rgba(240,136,62,.18); color: #f0883e; }
+/* 休市 / 数据不齐提示：只在需要时出现，平时不占视觉重量 */
+.hero-alert { display: none; margin-top: 8px; font-size: 12px; line-height: 1.55;
+  color: var(--neutral); text-align: left; }
+.hero-alert.show { display: block; padding: 6px 10px; border-radius: 8px;
+  background: rgba(212,160,23,.12); border: 1px solid rgba(212,160,23,.35); }
+/* 陈旧用橙色 + 加粗，不用红绿：红绿在这套 UI 里已经被涨跌占用了 */
+.hero-alert.show.severe { color: #f0883e; font-weight: 600;
+  background: rgba(240,136,62,.12); border-color: rgba(240,136,62,.45); }
 .hero-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .hero-title { font-size: 12px; color: var(--accent); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
 .hero-structural { margin: 0; font-size: 14px; line-height: 1.65; color: var(--text); }

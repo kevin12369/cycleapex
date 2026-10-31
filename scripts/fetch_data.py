@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+import glob
 import datetime as dt
 
 try:
@@ -254,19 +255,9 @@ def verdict_from_score(s):
 
 
 # ---- 专业维度评分（机构级牛熊分析补充层） ----
-def vix_score(v):
-    """VIX 波动率得分：低波动=平静偏牛，高波动=恐慌偏熊。"""
-    return round(clamp((20 - v) / 22), 3)
-
-
-def cape_score(c):
-    """CAPE 估值得分：越高越贵，未来回报预期越低（风险叠加，非即时牛熊）。"""
-    return round(clamp((25 - c) / 30), 3)
-
-
-def erp_score(e):
-    """股权风险溢价(ERP)得分：相对债券越有吸引力越偏牛。"""
-    return round(clamp((e - 2) / 4), 3)
+# vix_score / cape_score / erp_score / breadth_score 已于 2026-10-31 随四个维度一并删除。
+# 保留记录：它们测的是「收益率水平方向」「价格/200MA 偏离度」「单日涨跌家数」，
+# 在 80 份快照上的实测表现见 WEIGHTS 上方注释。要恢复任何一项，先把数据源修好再说。
 
 
 def vol_confirm_score(close, vol):
@@ -323,12 +314,7 @@ def apply_bond_score(s):
     return s
 
 
-def breadth_score(up, down, flat=0):
-    """市场广度得分：(涨-跌)/(涨+跌+平) ∈ [-1,1]，>0 普涨、<0 普跌。"""
-    tot = up + down + flat
-    if tot <= 0:
-        return 0.0
-    return round(clamp((up - down) / tot), 3)
+# breadth_score 已删除（2026-10-31，随广度维度一并移除）
 
 
 # ----------------------------------------------------------------------------
@@ -464,68 +450,9 @@ def fetch_china_10y_yield():
     return None
 
 
-def fetch_eastmoney_breadth():
-    """A股全市场广度（沪深京A股涨跌家数聚合，东方财富 clist 一次性取聚合行）。
-    返回 {up, down, flat} 或 None。best-effort，沙箱代理抖动时优雅跳过。"""
-    url = "https://push2.eastmoney.com/api/qt/clist/get"
-    params = {
-        "pn": "1", "pz": "1", "po": "1", "np": "1", "fltt": "2", "invt": "2",
-        "fid": "f3",
-        "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",  # 沪A/深A/京A 等全部A股
-        "fields1": "f1,f2,f3,f4,f5,f6",
-        "fields2": "f104,f105,f106",   # f104=上涨家数 f105=下跌家数 f106=平盘家数
-    }
-    r = http_get(url, params=params)
-    if not r:
-        return None
-    try:
-        data = r.json()["data"]["diff"]
-        row = data[0] if isinstance(data, list) else data
-        up = int(row.get("f104") or 0)
-        down = int(row.get("f105") or 0)
-        flat = int(row.get("f106") or 0)
-        if up + down + flat <= 0:
-            return None
-        return {"up": up, "down": down, "flat": flat}
-    except Exception as e:  # noqa
-        print(f"  [WARN] A股广度解析失败: {e}")
-        return None
-
-
-def fetch_us_breadth():
-    """美股广度代理：RSP(等权S&P500) vs SPY(市值权重)。
-    等权跑赢市值权重 => 宽度扩散(健康,偏牛)；等权落后 => 宽度收窄(偏熊)。
-    返回 {score, ratio_last, series} 或 None。best-effort。"""
-    rsp = fetch_yahoo("RSP", rng="6mo")
-    spy = fetch_yahoo("SPY", rng="6mo")
-    if not rsp or not spy:
-        return None
-    d_r = {d: c for d, c in zip(rsp["dates"], rsp["close"]) if c}
-    d_s = {d: c for d, c in zip(spy["dates"], spy["close"]) if c}
-    dates = sorted(set(d_r) & set(d_s))
-    if len(dates) < 22:
-        return None
-    ratio = [d_r[d] / d_s[d] for d in dates]
-    base = ratio[0]
-    norm = [x / base * 100 for x in ratio]
-    # 近 21 交易日(约1月)动量：等权相对市值的相对强弱
-    mom = norm[-1] / norm[-22] - 1 if len(norm) >= 22 else norm[-1] / norm[0] - 1
-    score = clamp(mom / 0.05)   # ±5% 月度动量 => ±1
-    ma20 = sma(norm, 20); ma60 = sma(norm, 60); ma200 = sma(norm, 200)
-    rsi_arr = rsi(norm, 14)
-    dif, dea, hist = macd(norm)
-    series = {
-        "name": "美股广度(等权/市值)", "symbol": "RSP/SPY", "dates": dates,
-        "open": list(norm), "high": list(norm), "low": list(norm), "close": list(norm),
-        "vol": [0] * len(norm),
-        "ma20": ma20, "ma60": ma60, "ma200": ma200,
-        "rsi": rsi_arr, "macd": dif, "macdSignal": dea, "macdHist": hist,
-        "volMa20": [0] * len(norm), "volScore": 0.0,
-        "latest": norm[-1], "score": round(score, 3),
-        "verdict": verdict_from_score(score),
-    }
-    return {"score": round(score, 3), "ratio_last": round(ratio[-1], 4), "series": series}
-
+# fetch_eastmoney_breadth / fetch_us_breadth 已删除（2026-10-31，广度维度移除）
+# 东财 clist 接口在 GitHub runner 上长期 502（80 份快照 A股侧命中 0/80），
+# Yahoo RSP/SPY 可用但与 A股、韩股均为负相关，语义已不是「宽度」。
 
 # ----------------------------------------------------------------------------
 # 数据源：恐惧贪婪指数（美股，CNN 同口径）
@@ -548,22 +475,8 @@ def fetch_fng():
 # ----------------------------------------------------------------------------
 # 数据源：multpl.com（Shiller CAPE / 盈利收益率，免密钥抓取）
 # ----------------------------------------------------------------------------
-def fetch_multpl(metric_slug):
-    """抓取 multpl.com 某指标的最新值（best-effort，HTML 解析）。"""
-    import re
-    url = f"https://www.multpl.com/{metric_slug}/table/by-month"
-    r = http_get(url, headers={"Accept": "text/html"}, timeout=25)
-    if not r:
-        return None
-    try:
-        m = re.search(r"<td>([A-Za-z]{3}\s+\d{1,2},\s+\d{4})</td>\s*<td>([\d.]+)</td>", r.text)
-        if m:
-            d = dt.datetime.strptime(m.group(1), "%b %d, %Y").strftime("%Y-%m-%d")
-            return {"date": d, "value": float(m.group(2))}
-    except Exception as e:  # noqa
-        print(f"  [WARN] multpl {metric_slug} 解析失败: {e}")
-    return None
-
+# fetch_multpl 已删除（2026-10-31，估值维度移除）
+# multpl.com 在 runner IP 段长期不可达，真实 CAPE 命中 0/80。
 
 # ----------------------------------------------------------------------------
 # 构建单序列对象（含指标与最新分）
@@ -572,18 +485,47 @@ def build_series(name, symbol, raw, invert=False):
     # 清洗空值行（Yahoo 末/首根偶有 null），保证 OHLC 与指标对齐。
     # 东财中债10Y 只给 dates+close，没有 OHLCV，这里用收盘价补齐，
     # 否则 zip(raw["open"], ...) 会直接 KeyError 把整个脚本带崩。
+    #
+    # 休市容错（2026-10-31）：
+    #   ① 价格 <= 0 一律丢弃 —— 部分源在休市/异常时用 0 占位，
+    #      0 会让收益率变形（除以 0 或 ln(0)）并污染均线与 RSI；
+    #   ② 日期乱序/重复 —— 去重后按日期升序，保证「最后一根 = 最新交易日」这个假设成立；
+    #   ③ 未来日期 —— 数据源时区错乱时会吐出明天/后天的点，会把"数据截止日"算成未来，
+    #      进而让新鲜度判断失效（lag 变成负数）。
+    today_utc = dt.datetime.now(dt.timezone.utc).date()
     _c = raw.get("close") or []
     _o = raw.get("open") or _c
     _h = raw.get("high") or _c
     _l = raw.get("low") or _c
-    dates, o, h, l, c, vol = [], [], [], [], [], []
+    rows = []
     for d, op, hp, lp, cp, vp in zip(raw["dates"], _o, _h, _l, _c, raw.get("vol") or [0] * len(_c)):
         if None in (op, hp, lp, cp):
             continue
-        dates.append(d); o.append(op); h.append(hp); l.append(lp); c.append(cp)
-        vol.append(vp if vp is not None else 0)
-    if not c:
+        try:
+            if min(op, hp, lp, cp) <= 0:       # ① 零价/负价占位
+                continue
+            dstr = str(d)[:10]
+            ddate = dt.date.fromisoformat(dstr)
+        except (TypeError, ValueError):
+            continue
+        if ddate > today_utc:                  # ③ 未来日期
+            continue
+        rows.append((dstr, op, hp, lp, cp, vp if vp is not None else 0))
+
+    # ② 去重 + 升序（同一日期保留最后出现的一条，通常是最新修正值）
+    dedup = {}
+    for r in rows:
+        dedup[r[0]] = r
+    rows = [dedup[k] for k in sorted(dedup)]
+
+    if not rows:
         return None
+    dates = [r[0] for r in rows]
+    o = [r[1] for r in rows]
+    h = [r[2] for r in rows]
+    l = [r[3] for r in rows]
+    c = [r[4] for r in rows]
+    vol = [r[5] for r in rows]
     close = c
     ma20 = sma(close, 20)
     ma60 = sma(close, 60)
@@ -615,6 +557,80 @@ def build_series(name, symbol, raw, invert=False):
         "usable": usable,
         "score": score,
         "verdict": verdict_from_score(score),
+        # 数据实际截止日（最后一根 K 线的日期）。休市容错的核心字段：
+        # generated_at 是"什么时候跑的"，lastDate 才是"数据到哪天"。
+        "lastDate": dates[-1],
+        "lastCloseDate": dates[-1],
+    }
+
+
+def market_freshness(markets, today_utc=None):
+    """汇总各市场「数据实际截止日」，判断是正常、休市还是数据陈旧。
+
+    为什么不靠交易日历：维护中美两地节假日表既容易过期，也解释不了
+    "东方财富挂了三天但 Yahoo 正常"这种单源故障。从数据自身反推截止日，
+    天然兼容周末、长短假、单源宕机三种情况。
+    """
+    today_utc = today_utc or dt.datetime.now(dt.timezone.utc).date()
+    per, names = {}, {}
+    for k, mk in markets.items():
+        ds = [s.get("lastDate") for s in (mk.get("series") or []) if s.get("lastDate")]
+        if not ds:
+            continue
+        per[k] = max(ds)
+        names[k] = mk.get("label") or k
+    if not per:
+        return {"as_of": None, "lag_days": None, "status": "unknown",
+                "per_market": {}, "skew_days": None, "note": "无任何带日期的序列"}
+
+    parsed = {k: dt.date.fromisoformat(v) for k, v in per.items()}
+    latest = max(parsed.values())
+    earliest = min(parsed.values())
+    lag = (today_utc - latest).days
+    skew = (latest - earliest).days
+
+    # 用「缺失工作日数」而非「自然日差」判定。
+    # 自然日会误伤：周一盘前跑，数据是上周五的，自然日差 3 天看起来像"停了三天"，
+    # 但中间只隔了 1 个工作日（周一当天还没收盘），属于完全正常。
+    # 不维护节假日表：中美节日各十来天且每年变动，维护成本远大于收益。
+    # 长假无新数据会被缺工作日数自然放大（国庆 7 天 ≈ 5 个工作日），无需专门识别。
+    missing_td = 0
+    _d = latest + dt.timedelta(days=1)
+    while _d <= today_utc:
+        if _d.weekday() < 5:
+            missing_td += 1
+        _d += dt.timedelta(days=1)
+
+    is_weekend = today_utc.weekday() >= 5
+    if missing_td >= 4:
+        status = "stale"
+        note = (f"已缺失 {missing_td} 个交易日的数据，"
+                f"可能是长假休市或数据源异常，请核对")
+    elif is_weekend:
+        status = "market_closed"
+        note = "今天是周末，市场休市，数据为最近交易日收盘"
+    elif missing_td <= 1:
+        status = "live"
+        note = "各市场数据为最近一个交易日收盘"
+    else:
+        status = "market_closed"
+        note = f"当前处于假期休市（已缺 {missing_td} 个交易日），数据为最近交易日收盘"
+
+    if skew > 1:
+        behind = sorted(parsed.items(), key=lambda x: x[1])[:1]
+        bk, bv = behind[0]
+        note += f"；各市场数据不同步（最大相差 {skew} 天，最早为{names.get(bk, bk)} {bv}）"
+
+    return {
+        "as_of": latest.isoformat(),
+        "lag_days": lag,
+        "missing_trading_days": missing_td,
+        "status": status,
+        "note": note,
+        "skew_days": skew,
+        "per_market": {k: {"as_of": v, "label": names.get(k, k),
+                           "lag_days": (today_utc - parsed[k]).days}
+                       for k, v in per.items()},
     }
 
 
@@ -805,42 +821,14 @@ def main():
     if all_vol:
         print(f"  [--] 量价配合参考值 {round(sum(all_vol) / len(all_vol), 3)}（不参与综合分）")
 
-    # ---------- 广度维度（跨市场：A股涨跌家数 + 美股等权-市值差） ----------
-    ab = fetch_eastmoney_breadth()
-    ub = fetch_us_breadth()
-    br_a = breadth_score(ab["up"], ab["down"], ab["flat"]) if ab else None
-    br_us = ub["score"] if ub else None
-    if ab:
-        print(f"  [OK] A股广度 涨{ab['up']}/跌{ab['down']}/平{ab['flat']} 分 {br_a}")
-    else:
-        print("  [WARN] A股广度抓取失败（东方财富可达性）")
-    if br_us is not None:
-        print(f"  [OK] 美股广度(等权-市值) 分 {br_us} 比率 {ub['ratio_last']}")
-    else:
-        print("  [WARN] 美股广度抓取失败（Yahoo RSP/SPY）")
-
-    if br_a is not None or br_us is not None:
-        # 跨市场等权复合：A股单日A/D + 美股1月动量（等权相对市值）
-        bs = (round(0.5 * br_a + 0.5 * br_us, 3)
-              if (br_a is not None and br_us is not None) else (br_a if br_us is None else br_us))
-        sub = []
-        if br_a is not None:
-            sub.append(f"A股涨{ab['up']}/跌{ab['down']}")
-        if br_us is not None:
-            sub.append(f"美股等权-市值 {br_us}")
-        extra = {"up": ab["up"] if ab else None, "down": ab["down"] if ab else None,
-                 "flat": ab["flat"] if ab else None,
-                 "us_score": br_us, "us_ratio": (ub["ratio_last"] if ub else None)}
-        if ub and ub.get("series"):
-            extra["series"] = [ub["series"]]
-        add_dim("breadth", "广度", bs, verdict_from_score(bs), "；".join(sub), extra)
-        if br_a is not None:
-            add_heat("广度", "A股涨跌家数", round(br_a, 3))
-        if br_us is not None:
-            add_heat("广度", "美股等权-市值", round(br_us, 3))
-        print(f"  [OK] 广度综合 分 {bs}")
-    else:
-        print("  [SKIP] 广度抓取失败（A股+美股均不可达）")
+    # ---------- 广度：已整体移除（2026-10-31 第三次修订） ----------
+    # 80 份快照实测：
+    #   · A股侧（东财涨跌家数）成功 0/80 —— 「跨市场复合」从未真正生效，实际只有美股一侧；
+    #   · 剩余的美股侧 RSP/SPY 相对动量，与 A股、韩股均为负相关，语义上不是「宽度」而是
+    #     「小盘 vs 大盘风格差」；
+    #   · 与综合分 r = −0.07，几乎不贡献方向信息。
+    # 一个靠单侧数据伪装成跨市场指标的维度，比没有这个维度更糟。整段删除，不保留参考值。
+    print("  [--] 广度维度已移除（A股侧 0/80 可达，实为单一美股风格因子）")
 
     # ---------- 债券维度（美债10Y + 中债10Y，口径=收益率20日变化量） ----------
     bond_series = []
@@ -865,78 +853,29 @@ def main():
         if cn10y_raw:
             add_heat("债券", "中债10Y-20日变化", bond_series[-1]["score"])
 
-    # ---------- 风险温度计（VIX 优先；Yahoo 403 时用标普已实现波动率代理） ----------
-    # 注意：这里【不再】产出 volatility 维度。
-    # 理由见 WEIGHTS 注释：VIX 与美股 r=+0.82、与情绪 r=+0.82，作为投票项纯属重复计票。
-    # 但它作为「风险温度」仍然有用（估值泡沫判断、structural_signal 都要它），
-    # 所以保留抓取、保留数值与状态，只是不参与综合分。
-    vix_raw = fetch_yahoo("^VIX")
-    vix_val = None
-    vix_src = "VIX"
-    if vix_raw:
-        cl = [x for x in vix_raw["close"] if x is not None]
-        if cl:
-            vix_val = cl[-1]
-    if vix_val is None:
-        # 回退：标普500 近20日对数收益的已实现波动率(年化%)近似 VIX
-        spx_raw = fetch_quote("^GSPC", EM_SECID.get("^GSPC"))
-        if spx_raw:
-            cl = [x for x in spx_raw["close"] if x is not None]
-            if len(cl) >= 21:
-                rets = [math.log(cl[i] / cl[i - 1]) for i in range(len(cl) - 20, len(cl))]
-                mean = sum(rets) / len(rets)
-                var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
-                vix_val = (var ** 0.5) * (252 ** 0.5) * 100
-                vix_src = "标普20日已实现波动率代理"
-    risk_gauge = None
-    if vix_val is not None:
-        vix_regime = ("极端恐慌" if vix_val > 30 else "恐慌" if vix_val > 25 else
-                      "谨慎" if vix_val > 20 else "正常" if vix_val > 15 else "平静")
-        risk_gauge = {"vix": round(vix_val, 2), "regime": vix_regime, "source": vix_src}
-        print(f"  [OK] 风险温度 {vix_src} {vix_val:.1f}（{vix_regime}）· 不参与综合分")
-    else:
-        print("  [SKIP] VIX 抓取失败（风险温度计不可用）")
+    # ---------- 波动率：已整体移除（2026-10-31 第三次修订） ----------
+    # 80 份快照实测：
+    #   · VIX 实际只落在 14.2~20.7，81% 的时间在 15~20 之间；
+    #     (20−VIX)/22 这个映射只用到 [−1,1] 区间的 15%，σ=0.068 是公式造成的，
+    #     不是市场"没给波动率信息"。
+    #   · 与美股 r=+0.82、与情绪 r=+0.82 —— 作为投票项是重复计票。
+    #   · 更关键：按实测方向修正后（低波动=自满→偏空）放回投票，会与美股在加权里互相对冲，
+    #     综合分 σ 从 0.097 掉到 0.083、共识触发率从 31% 掉到 9%。
+    #     它抵消掉的不是风险，是信息。所以不给投票权。
+    #   · 也不保留 risk_gauge 展示：VIX 本身已是恐惧贪婪指数的 7 个成分之一
+    #     （股价动量/强度/新高新低/看跌看涨比/市场波动率/避险需求/垃圾债需求），
+    #     情绪维度已内含它的贡献，再单列一行是重复。
+    print("  [--] 波动率维度已移除（VIX 仅 14~21 窄区间，且已内含于情绪维度）")
 
-    # ---------- 估值维度（CAPE + ERP，multpl 免密钥；失败回退价格代理） ----------
-    cape_d = fetch_multpl("shiller-pe")
-    ey_d = fetch_multpl("s-p-500-earnings-yield")
-    val_parts = []
-    cape = cape_d["value"] if cape_d else None
-    erp = None
-    val_method = "CAPE"
-    if cape_d or ey_d:
-        us10y_val = us10y["latest"] if us10y else None
-        ey = ey_d["value"] if ey_d else None
-        if cape:
-            cs = cape_score(cape)
-            val_parts.append(cs)
-            add_heat("估值", "CAPE", round(cs, 3))
-            print(f"  [OK] 估值 CAPE {cape:.1f} 分 {cs}")
-        if ey and us10y_val:
-            erp = ey - us10y_val   # 股权风险溢价 = 盈利收益率 - 10Y国债收益率
-            cs = erp_score(erp)
-            val_parts.append(cs)
-            add_heat("估值", "股权风险溢价", round(cs, 3))
-            print(f"  [OK] 估值 ERP {erp:.2f}% 分 {cs}")
-    else:
-        # 兜底：标普500 价格 / 200日均线 水平代理（价格远高于长期均值=偏贵）
-        spx = next((s for s in us_series if s["symbol"] == "^GSPC"), None) if us_series else None
-        if spx and spx["ma200"][-1]:
-            ratio = spx["close"][-1] / spx["ma200"][-1]
-            cs = round(clamp(-(ratio - 1) / 0.25), 3)   # 高于均值25%→-1，低于→+1
-            val_parts.append(cs)
-            val_method = "价格/200MA代理"
-            add_heat("估值", "估值代理", round(cs, 3))
-            print(f"  [OK] 估值代理 价/200MA={ratio:.2f} 分 {cs}（multpl 不可达）")
-        else:
-            print("  [SKIP] 估值抓取失败（multpl 不可达且无标普序列）")
-
-    if val_parts:
-        val_score = round(sum(val_parts) / len(val_parts), 3)
-        tag = "偏贵" if val_score < -0.2 else ("中性偏高" if val_score < 0 else "中性")
-        add_dim("valuation", "估值", val_score, verdict_from_score(val_score),
-                f"{val_method} · {tag}",
-                {"cape": cape, "erp": erp, "method": val_method})
+    # ---------- 估值：已整体移除（2026-10-31 第三次修订） ----------
+    # 80 份快照实测：
+    #   · 真实 CAPE 命中 0/80，真实 ERP 命中 0/80 —— multpl.com 在 GitHub runner 上
+    #     长期不可达（IP 段被挡），「CAPE/ERP 已落地」这句从未成立；
+    #   · 100% 走「价格/200MA」兜底，而该代理与 20 日动量相关 r=+0.65，本质是趋势延伸度；
+    #   · 偏离度区间仅 +3.7%~+8.8%，导致该维度常年输出 −0.15~−0.35 的负分，
+    #     是一个「结构上只会投空票」的伪维度，实测制造了 12 次虚假空头共识。
+    # 名不副实 + 单向偏置，整段删除。
+    print("  [--] 估值维度已移除（真实 CAPE 命中 0/80，兜底代理实为趋势延伸度）")
 
     # ---------- 韩国 KOSPI（全球风险 / 半导体周期领先指标，Yahoo 免密钥） ----------
     ks_raw = fetch_quote("^KS11", EM_SECID.get("^KS11"))
@@ -1010,17 +949,22 @@ def main():
     #
     # 演进史（勿删，避免下次又凭直觉把噪声维度加回来）：
     #   · credit(0.06) / macro(0.08)：随 FRED 依赖一并移除（本项目不使用任何密钥数据源）。
-    #   · volume(0.07)：80 份快照实测 σ=0.180、86 天里翻转 42 次、与综合分 r=−0.12。
-    #     "量价配合"在 A股/美股两个市场用同一套口径聚合，实际测到的是噪声而非趋势确认。
-    #   · volatility(0.06)：σ=0.068（全部维度最低），与美股 r=+0.82、与情绪 r=+0.82。
-    #     它几乎完全复述美股维度，却占 6% 权重把综合分往中间拉。
-    #     VIX 本身有价值，但价值在"风险温度"而非"投票"，故改为不投票的 risk_gauge 展示。
+    #   · volume(0.07)：80 份快照 σ=0.180、平均只维持 1.8 天、79 天翻转 42 次、fwd21 r=+0.122。
+    #     「价跌放量=派发」这组后续收益反而 +1.42%（上涨 100%），符号假设本身不成立。
+    #   · volatility(0.06)：与美股 r=+0.82、与情绪 r=+0.82。VIX 实际只落在 14~21，
+    #     (20−VIX)/22 只用到 [−1,1] 区间的 15%，σ 低是公式造成的，不是市场没给信息；
+    #     但把它按实测方向修正后放回投票，会与美股在加权里互相对冲，σ 反而从 0.097 掉到 0.083。
+    #     对冲掉的不是风险，是信息 → 不投票。
+    #   · valuation(0.09)：真实 CAPE/ERP 命中 0/80，100% 走「价格/200MA」兜底，
+    #     该代理与 20 日动量 r=+0.65，本质是趋势延伸度；且常年输出 −0.15~−0.35 的负分，
+    #     实测制造了 12 次虚假空头共识 → 移出投票，降为 structural 层的一句价格位置描述。
+    #   · breadth(0.08)：A股侧（东财涨跌家数）命中 0/80，「跨市场复合」从未生效；
+    #     剩下的美股侧 RSP/SPY 与 A股、韩股均为负相关，语义上更接近「小盘 vs 大盘风格差」。
     #
-    # 删掉这两项后 leave-one-out 复核：σ 0.072 → 0.084（+17%），振幅不再被均值回归压平。
-    # 剩余 9 项按原相对比例放大到 1.00（不改变彼此的相对话语权）。
-    WEIGHTS = {"us_stocks": 0.19, "cn_stocks": 0.17, "kr_stocks": 0.08,
-               "bonds": 0.12, "gold": 0.07, "sentiment": 0.13,
-               "valuation": 0.09, "breadth": 0.08, "yen_carry": 0.07}
+    # 三次修订后：13 → 11 → 9 → 7 维。每一步都留了实测依据，不是越删越顺手。
+    # 剩余 7 项按原相对比例等比放大到 1.00，彼此话语权不变。
+    WEIGHTS = {"us_stocks": 0.24, "cn_stocks": 0.20, "kr_stocks": 0.10,
+               "bonds": 0.14, "gold": 0.08, "sentiment": 0.16, "yen_carry": 0.08}
     present = {k: v for k, v in dims.items() if k in WEIGHTS}
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
@@ -1048,29 +992,67 @@ def main():
                  "total": n_dim, "net": net_votes, "need": need,
                  "ratio": vote_ratio, "verdict": consensus_verdict}
 
-    # ---------- 结构信号（Pérez 范式叠加 + 广度校验） ----------
-    val_mk = markets.get("valuation")
-    cape_v = val_mk.get("cape") if val_mk else None
-    vix_v = risk_gauge["vix"] if risk_gauge else None      # 风险温度计，来自上面的 VIX 抓取
-    val_score = val_mk.get("score") if val_mk else None
-    br_mk = markets.get("breadth")
-    br_score = br_mk.get("score") if br_mk else None
+    # ---------- 结构信号（跨资产一致性 + 中美分化） ----------
+    # 原实现是「估值极端 + 波动率低迷 → 泡沫累积」，但估值、波动率、广度三项已在
+    # 2026-10-31 全部移除。若继续保留那段判断，就成了用不存在的输入产出看起来很专业的结论。
+    # 现在只描述「剩余 7 个维度之间」的关系——每个字都能在 payload 里找到对应数字。
+    structural = ""
 
-    if val_score is not None:
-        if (cape_v and cape_v > 35 or val_score < -0.4) and (vix_v is None or vix_v < 18):
-            structural = ("估值极端 + 波动率低迷：呈现「金融资本主导·泡沫累积」特征，"
-                          "符合导入期狂热(Frenzy)尾声，需警惕向转折点(Turning Point)过渡")
-        elif (cape_v and cape_v > 30) or val_score < -0.2:
-            structural = "估值偏高：处于导入期中后段，金融资本活跃，尚待进入协同(Synergy)展开期"
+    def _s(k):
+        return dims.get(k)
+
+    # ① 中美分化
+    us, cn = _s("us_stocks"), _s("cn_stocks")
+    if us is not None and cn is not None:
+        gap = round(us - cn, 3)
+        if gap >= 0.5:
+            structural += f"中美显著分化，美股领先（美股{us*100:+.0f} / A股{cn*100:+.0f}）"
+        elif gap <= -0.5:
+            structural += f"中美显著分化，A股领先（A股{cn*100:+.0f} / 美股{us*100:+.0f}）"
         else:
-            structural = "估值中性：未显现明显泡沫特征"
-    else:
-        structural = "估值数据不足，结构信号以广度校验为准"
+            structural += "中美节奏接近，未见显著分化"
 
-    if br_score is not None and br_score < -0.3:
-        structural += "；广度显著转弱（普跌），与指数背离，警惕量价动能衰减。"
-    elif br_score is not None and br_score > 0.3:
-        structural += "；广度普涨配合，宽度健康。"
+    # ② 跨资产一致性：风险资产（美/A/韩股）vs 避险资产（债/金）
+    risk_side = [v for v in (_s("us_stocks"), _s("cn_stocks"), _s("kr_stocks")) if v is not None]
+    safe_side = [v for v in (_s("bonds"), _s("gold")) if v is not None]
+    if risk_side and safe_side:
+        r_mean = sum(risk_side) / len(risk_side)
+        s_mean = sum(safe_side) / len(safe_side)
+        if r_mean > 0.15 and s_mean > 0.15:
+            tag = "股与债金同向偏多，流动性充裕、避险需求缺位"
+        elif r_mean < -0.15 and s_mean > 0.15:
+            tag = "股弱而债金强，是典型的避险切换"
+        elif r_mean < -0.15 and s_mean < -0.15:
+            tag = "股、债、金同向偏弱，流动性在收紧"
+        elif r_mean > 0.15 and s_mean < -0.15:
+            tag = "股强而债金弱，风险偏好主导、资金离开避险资产"
+        else:
+            tag = "股与债金方向不一，跨资产未形成共振"
+        structural += f"；{tag}（风险侧{r_mean*100:+.0f} / 避险侧{s_mean*100:+.0f}）"
+
+    # ③ 套息环境
+    yen = _s("yen_carry")
+    if yen is not None:
+        if yen <= -0.3:
+            structural += "；日元套息正在拆仓，全球风险偏好受压"
+        elif yen >= 0.3:
+            structural += "；日元套息顺畅，为风险偏好提供支撑"
+
+    # ④ 共识与加权分歧（这两者不一致时本身就是结论）
+    if consensus_verdict != "neutral" and verdict_from_score(overall) != consensus_verdict:
+        structural += (f"；注意两个口径不一致：加权平均判{verdict_from_score(overall)}、"
+                       f"共识投票判{consensus_verdict}，说明分歧集中在少数极端维度上")
+    if structural:
+        structural += "。"
+
+    # ---------- 数据新鲜度（周末 / 假期 / 单源宕机） ----------
+    freshness = market_freshness(markets)
+    print(f"  [--] 数据截止 {freshness['as_of']}（滞后 {freshness['lag_days']} 天，"
+          f"状态 {freshness['status']}）")
+    if freshness["skew_days"] and freshness["skew_days"] > 1:
+        print(f"  [WARN] 各市场数据不同步，最大相差 {freshness['skew_days']} 天")
+    if freshness["status"] == "stale":
+        print("  [WARN] 数据已连续多日未更新，请核对是否长假休市或数据源异常")
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1079,21 +1061,19 @@ def main():
             "cn_indices": "东方财富 push2his / Yahoo 回退",
             "us_10y": "Yahoo Finance ^TNX",
             "cn_10y": "东方财富 datacenter (best-effort)",
-            "vix": "Yahoo Finance ^VIX",
             "kr_indices": "Yahoo Finance ^KS11",
             "gold": "Yahoo Finance GC=F",
             "fx": "Yahoo Finance JPY=X",
             "fng": "feargreedchart.com",
-            "valuation": "multpl.com (Shiller CAPE / 盈利收益率)",
-            "breadth": "东方财富 push2 全市场涨跌家数 + Yahoo RSP/SPY 等权-市值差 (best-effort)",
         },
         "markets": markets,
         "overall": {"score": overall, "verdict": verdict_from_score(overall)},
         # 两条腿并列：加权平均看"平均多偏"，共识计数看"几个维度偏"。
         # 前端把两者都渲染出来，分歧本身即信息。
         "consensus": consensus,
-        # 风险温度计（不投票）：VIX 数值与状态，供估值泡沫判断与页头展示
-        "risk_gauge": risk_gauge,
+        # 数据新鲜度：区分「生成时间」与「数据实际截止日」。
+        # 周末/假期跑批时两者不同，只报 generated_at 会让读者以为休市也有新数据。
+        "data_freshness": freshness,
         "heatmap": heatmap,
         "professional": {
             "weights": WEIGHTS,
@@ -1101,17 +1081,15 @@ def main():
             "dimensions": {k: round(dims[k], 3) for k in present},
             "method_notes": [
                 "序列技术分 = 0.5·MA排列(MA20/60/200) + 0.25·RSI(14) + 0.25·MACD(12,26,9)",
-                "债券维度改测「收益率 20 日变化量」而非「收益率绝对水平」：20日下行25bp→+1，上行→−1。原口径测的是水平方向，长端长期偏高时会给出一条恒为负的序列，等于把期限溢价的结构性上移误读成每日的债市下跌",
+                "债券维度测「收益率 20 日变化量」而非「收益率绝对水平」：20日下行25bp→+1，上行→−1。原口径测的是水平方向，长端长期偏高时会给出一条恒为负的序列，等于把期限溢价的结构性上移误读成每日的债市下跌",
                 "情绪维度 = (恐贪指数-50)/50",
-                "估值维度 CAPE 越高越贵(未来回报预期越低)、ERP 越高股票越具吸引力",
-                "广度维度 = 跨市场复合：A股(涨家数-跌家数)/(涨+跌+平) 等权 0.5 + 美股等权ETF(RSP)对市值ETF(SPY)的月度动量(等权跑赢=宽度扩散)，各0.5",
                 "综合分（加权口径）= 各维度分按权重加权，并对「实际可用维度」归一化",
                 "共识口径 = 偏多维度数 − 偏空维度数（|分|≥0.15 才计票）；净票数达到「可用维度数的 1/3」（最少 2 票）即判多头/空头共识，否则无共识。用于对冲加权口径在维度共线时的「正负抵消→恒贴零」缺陷",
-                "波动率与量能不再作为维度投票：VIX 与美股 r=+0.82、量能 86 天翻转 42 次，前者复述美股、后者是噪声。VIX 以 risk_gauge 形式作为风险温度展示",
-                "结构层：引入 Carlota Pérez 技术-经济范式周期，叠加广度背离校验，作为战术牛熊之上的制度背景",
+                "结构信号只描述剩余维度之间的关系（中美分化 / 跨资产一致性 / 套息环境 / 两口径分歧），不再引用已移除的估值、波动率、广度",
                 "韩国 KOSPI：高 Beta、半导体/出口敏感市场，作全球风险与 AI 硬件周期领先指标（kr_stocks）",
                 "黄金维度作避险/实际利率代理，按自身价格趋势计综合分（金价走强常伴随避险需求/实际利率下行）",
                 "日元套息维度 = clamp(USD/JPY 近20日变动 / 5%)：JPY 弱=套息顺畅=risk-on，JPY 急升=平仓=risk-off（yen_carry）",
+                "已移除维度（2026-10-31 三批）：信用/宏观（依赖密钥）、量能（1.8天翻转一次，噪声）、波动率（VIX 仅14~21窄区间且已内含于情绪）、估值（真实CAPE命中0/80，兜底代理实为趋势延伸度）、广度（A股侧命中0/80，实为单一美股风格因子）",
             ],
         },
         "structural_signal": structural,
@@ -1133,7 +1111,29 @@ def main():
     try:
         hist_dir = os.path.join(OUT_DIR, "history")
         os.makedirs(hist_dir, exist_ok=True)
-        snap = os.path.join(hist_dir, dt.date.today().isoformat() + ".json")
+
+        # 休市去重：如果最新一份快照的数据截止日与本次相同，说明没有新数据，
+        # 再写一份只是把同一根 K 线重复记进历史，会污染回测基线
+        # （历史回测按快照日期算前瞻收益，重复快照会让同一交易日被计多次）。
+        prev_as_of, prev_file = None, None
+        existing = sorted(glob.glob(os.path.join(hist_dir, "*.json")))
+        if existing:
+            prev_file = existing[-1]
+            try:
+                pj = json.load(open(prev_file, encoding="utf-8"))
+                prev_as_of = (pj.get("data_freshness") or {}).get("as_of")
+            except Exception:  # noqa
+                prev_as_of = (json.load(open(prev_file, encoding="utf-8"))
+                              .get("generated_at", "")[:10] or None)
+
+        as_of = freshness.get("as_of")
+        if prev_as_of and as_of and prev_as_of == as_of and prev_file:
+            print(f"== 数据未推进（截止日仍为 {as_of}），不新增快照；"
+                  f"用本次结果覆盖 {os.path.basename(prev_file)} ==")
+            snap = prev_file
+        else:
+            snap = os.path.join(hist_dir, dt.date.today().isoformat() + ".json")
+
         with open(snap, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         print(f"== 已归档快照 {snap} ==")
@@ -1151,7 +1151,11 @@ def main():
             "generated_at": payload["generated_at"],
             "overall": payload["overall"],
             "consensus": payload["consensus"],
-            "risk_gauge": payload["risk_gauge"],
+            # 数据截止日 + 新鲜度状态。自动化告警应优先看 data_as_of / freshness_status，
+            # 而不是 generated_at —— 休市期间 generated_at 天天变、数据却不动。
+            "data_as_of": payload["data_freshness"]["as_of"],
+            "freshness_status": payload["data_freshness"]["status"],
+            "freshness_lag_days": payload["data_freshness"]["lag_days"],
             "dims_available": len(present),
             "dims_total": len(WEIGHTS),
             "note": ("全部维度可用" if len(present) == len(WEIGHTS)

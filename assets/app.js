@@ -101,13 +101,14 @@
   }
 
   // ---------------- 综合权重配置面板 ----------------
-  // 9 个投票维度。volume / volatility 已从投票席位移除：
-  //   · volume：80 份快照 σ=0.180、86 天翻转 42 次、与综合分 r=−0.12 → 噪声
-  //   · volatility：σ=0.068、与美股 r=+0.82 → 只是复述美股，却占权重把分数压回中间
-  // VIX 改以 risk_gauge 形式作"风险温度"展示（见 renderHero），不投票。
-  const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", kr_stocks: "韩股", bonds: "债券",
-    gold: "黄金", sentiment: "情绪", valuation: "估值",
-    breadth: "广度", yen_carry: "日元/套息" };
+  // 7 个投票维度（13 → 11 → 9 → 7）。
+  // 2026-10-31 三批删除，每一批都有实测依据，详见 fetch_data.py 里 WEIGHTS 上方的演进史：
+  //   · volume     —— 平均只维持 1.8 天、79 天翻转 42 次，是噪声
+  //   · volatility —— VIX 仅 14~21，与美股 r=+0.82，且已内含于情绪维度
+  //   · valuation  —— 真实 CAPE 命中 0/80，兜底代理实为「距200MA偏离度」
+  //   · breadth    —— A股侧命中 0/80，「跨市场」从未生效
+  const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", kr_stocks: "韩股",
+    bonds: "债券", gold: "黄金", sentiment: "情绪", yen_carry: "日元/套息" };
 
   function getDimScore(key) {
     const mk = DATA.markets[key];
@@ -225,8 +226,6 @@
       bonds: "债市回暖·收益率往下走",
       gold: "金价狂飙·避险资金抱团",
       sentiment: "情绪上头·贪婪盖过恐惧",
-      valuation: "估值还便宜·安全垫厚",
-      breadth: "宽度铺开·个股普涨",
       yen_carry: "套息顺风顺水·资金敢冲",
     };
     const NEG = {
@@ -236,15 +235,11 @@
       bonds: "债市承压·收益率往上拱",
       gold: "金价趴窝·避险盘撤退",
       sentiment: "情绪慌了·恐惧占上风",
-      valuation: "估值偏贵·小心挤泡沫",
-      breadth: "宽度塌了·涨的只是权重",
       yen_carry: "套息在拆仓·赶紧系安全带",
     };
     const MID = {
       us_stocks: "美股原地打转", cn_stocks: "A股不上不下", kr_stocks: "韩股观望",
       bonds: "债市横着", gold: "金价没方向", sentiment: "情绪半对半",
-      valuation: "估值不便宜也不离谱",
-      breadth: "宽度一般",
       yen_carry: "套息不温不火",
     };
     if (s >= 0.15) return POS[key] || null;
@@ -303,14 +298,22 @@
       }
     }
 
-    // 风险温度计（VIX，不参与综合分）
-    const rg = document.getElementById("heroGauge");
-    if (rg) {
-      const g = DATA.risk_gauge;
-      rg.innerHTML = (g && g.vix != null)
-        ? "风险温度：<b>" + g.vix.toFixed(1) + "</b> " + (g.regime || "") +
-          ' <span style="color:var(--muted)">（' + (g.source || "VIX") + "·不参与综合分）</span>"
-        : '风险温度：<span style="color:var(--muted)">VIX 暂不可达</span>';
+    // 休市 / 数据不齐时在 Hero 显式提示。
+    // 放在最显眼的结论区，而不是只藏在页头的小徽章里：
+    // 读者看的是"今天该怎么做"，如果数据其实是三天前的，这句话本身就该被拦住。
+    const alertEl = document.getElementById("heroAlert");
+    if (alertEl) {
+      const f = DATA.data_freshness || {};
+      const stale = f.status === "stale";
+      const skewed = (f.skew_days || 0) > 1;
+      if (stale || skewed) {
+        alertEl.innerHTML = "⚠ " + (f.note || "数据可能不是最新") +
+          (f.as_of ? `（截止 ${f.as_of}）` : "");
+        alertEl.className = "hero-alert show" + (stale ? " severe" : "");
+      } else {
+        alertEl.innerHTML = "";
+        alertEl.className = "hero-alert";
+      }
     }
 
     const chips = document.getElementById("heroChips");
@@ -631,12 +634,46 @@
     });
   }
 
-  // 顶部元信息：数据时点（UTC + 北京时间）与维度覆盖度。
-  // 维度分母取 professional.weights 的键数（算法设计维度），分子取实际可用维度；
-  // 两者不一致时说明某些维度数据源本次不可达，已按可用维度归一化。
-  // 注：分母是动态的——2026-10-31 移除信用/宏观两维后，权重表由 13 项变 11 项，
-  // 此处无需改动即自动显示「11 / 11」。
+  // 顶部元信息：数据「实际截止日」与「生成时间」分开显示。
+  // 休市时这两者不同——周末跑批 generated_at 会变、数据却停在周五。
+  // 只显示生成时间会让读者以为休市也有新数据，所以截止日放在最前面。
+  // 数据状态徽章刻意不用 bull/bear 两个类。
+  // 那两个红绿是 A 股的涨跌色，拿来标「数据是否新鲜」会让读者误读成行情方向。
+  // 改用灰（正常）/黄（休市）/橙（陈旧）三级，语义与行情完全隔离。
+  const FRESH_TEXT = {
+    live: "最新", market_closed: "休市", stale: "数据陈旧", unknown: "未知",
+  };
+  const FRESH_CLASS = {
+    live: "fresh-live", market_closed: "fresh-closed",
+    stale: "fresh-stale", unknown: "unknown",
+  };
+
   function renderMeta(d) {
+    // ① 数据截止日 + 新鲜度徽章
+    const f = d.data_freshness || {};
+    const asOfEl = document.getElementById("dataAsOf");
+    if (asOfEl) {
+      const asOf = f.as_of || (d.generated_at || "").slice(0, 10);
+      // 2026-10-30 → 2026-10-30（周五）；有 ISO 周的观感，比纯数字容易核对
+      let txt = asOf || "—";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+        const wd = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+          [new Date(asOf + "T00:00:00Z").getUTCDay()];
+        txt = `${asOf}（${wd}）`;
+        if (f.lag_days != null && f.lag_days > 0) txt += ` · ${f.lag_days} 天前`;
+      }
+      asOfEl.textContent = txt;
+      if (f.note) asOfEl.title = f.note;
+    }
+    const fb = document.getElementById("freshBadge");
+    if (fb) {
+      const st = f.status || "unknown";
+      fb.className = "badge " + (FRESH_CLASS[st] || "unknown");
+      fb.textContent = FRESH_TEXT[st] || st;
+      fb.title = f.note || "";
+    }
+
+    // ② 生成时间（北京时间）
     const el = document.getElementById("updated");
     const raw = d.generated_at || "";
     let txt = raw || "—";
@@ -653,6 +690,7 @@
     }
     if (el) el.textContent = txt;
 
+    // ③ 维度覆盖度：分母取权重表键数（设计维度），分子取实际可用维度
     const dimsEl = document.getElementById("dimsInfo");
     if (!dimsEl) return;
     const pro = d.professional || {};
