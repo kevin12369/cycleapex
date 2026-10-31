@@ -60,22 +60,13 @@
   }
 
   function renderGauges() {
-    const m = DATA.markets;
-    const cats = [
-      { key: "us_stocks", label: "美股" },
-      { key: "cn_stocks", label: "A股" },
-      { key: "kr_stocks", label: "韩股" },
-      { key: "bonds", label: "债券" },
-      { key: "gold", label: "黄金" },
-      { key: "sentiment", label: "情绪" },
-      { key: "volatility", label: "波动率" },
-      { key: "credit", label: "信用" },
-      { key: "valuation", label: "估值" },
-      { key: "macro", label: "宏观" },
-      { key: "volume", label: "量能" },
-      { key: "breadth", label: "广度" },
-      { key: "yen_carry", label: "日元/套息" },
-    ];
+    const m = DATA.markets || {};
+    // 维度清单以「数据里实际存在的 market」为准，不再硬编码。
+    // 历史上前端写死 13 项、后端常态只有 11 项，会渲染出两张"待配置/无数据"的空卡片；
+    // 现在后端去掉 credit/macro 后若前端再写死，就会出现同类问题。
+    const cats = Object.keys(WEIGHT_LABELS)
+      .filter((k) => m[k])
+      .map((k) => ({ key: k, label: WEIGHT_LABELS[k] }));
     const host = document.getElementById("gauges");
     // 先释放旧实例，避免 innerHTML 清空后 canvas 仍残留或 ECharts 内部 series 合并导致叠加
     Object.values(GAUGE_INSTANCES).forEach((inst) => { try { inst.dispose(); } catch (e) {} });
@@ -88,16 +79,8 @@
       let score = null, verdict = "unknown", sub = "待配置 / 无数据";
       const mk = m[c.key];
       if (mk) {
-        if (c.key === "macro") {
-          const d = mk.detail || {};
-          const parts = Object.values(d).map((x) => x.score);
-          score = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-          verdict = score == null ? "unknown" : (score >= 0.33 ? "bull" : score <= -0.33 ? "bear" : "neutral");
-          sub = mk.sub || Object.entries(d).map(([k, v]) => `${k}:${(v.score * 100).toFixed(0)}`).join("  ");
-        } else {
-          score = mk.score; verdict = mk.verdict;
-          sub = mk.sub || ("综合分 " + (score * 100).toFixed(0));
-        }
+        score = mk.score; verdict = mk.verdict;
+        sub = mk.sub || ("综合分 " + (score * 100).toFixed(0));
       }
       title.innerHTML = `${c.label} <span class="badge ${verdict}">${VERDICT_TEXT[verdict]}</span>`;
       const chart = document.createElement("div");
@@ -114,17 +97,12 @@
 
   // ---------------- 综合权重配置面板 ----------------
   const WEIGHT_LABELS = { us_stocks: "美股", cn_stocks: "A股", kr_stocks: "韩股", bonds: "债券",
-    gold: "黄金", sentiment: "情绪", volatility: "波动率", credit: "信用", valuation: "估值",
-    volume: "量能", breadth: "广度", macro: "宏观", yen_carry: "日元/套息" };
+    gold: "黄金", sentiment: "情绪", volatility: "波动率", valuation: "估值",
+    volume: "量能", breadth: "广度", yen_carry: "日元/套息" };
 
   function getDimScore(key) {
     const mk = DATA.markets[key];
     if (!mk) return null;
-    if (key === "macro") {
-      const d = mk.detail || {};
-      const parts = Object.values(d).map((x) => x.score);
-      return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-    }
     return (mk.score == null) ? null : mk.score;
   }
 
@@ -213,9 +191,7 @@
       gold: "金价狂飙·避险资金抱团",
       sentiment: "情绪上头·贪婪盖过恐惧",
       volatility: "波动睡着·市场岁月静好",
-      credit: "信用利差收窄·钱愿意借",
       valuation: "估值还便宜·安全垫厚",
-      macro: "宏观暖风·数据超预期",
       volume: "量能放大·资金在进场",
       breadth: "宽度铺开·个股普涨",
       yen_carry: "套息顺风顺水·资金敢冲",
@@ -228,9 +204,7 @@
       gold: "金价趴窝·避险盘撤退",
       sentiment: "情绪慌了·恐惧占上风",
       volatility: "波动炸了·恐慌指数抬头",
-      credit: "信用在裂·利差走阔",
       valuation: "估值偏贵·小心挤泡沫",
-      macro: "宏观转冷·数据在走弱",
       volume: "量能萎缩·有人在派发",
       breadth: "宽度塌了·涨的只是权重",
       yen_carry: "套息在拆仓·赶紧系安全带",
@@ -238,8 +212,8 @@
     const MID = {
       us_stocks: "美股原地打转", cn_stocks: "A股不上不下", kr_stocks: "韩股观望",
       bonds: "债市横着", gold: "金价没方向", sentiment: "情绪半对半",
-      volatility: "波动不咸不淡", credit: "信用平稳", valuation: "估值不便宜也不离谱",
-      macro: "宏观不温不火", volume: "量能平平", breadth: "宽度一般",
+      volatility: "波动不咸不淡", valuation: "估值不便宜也不离谱",
+      volume: "量能平平", breadth: "宽度一般",
       yen_carry: "套息不温不火",
     };
     if (s >= 0.15) return POS[key] || null;
@@ -275,16 +249,11 @@
     const chips = document.getElementById("heroChips");
     if (chips) {
       const m = DATA.markets;
-      const order = ["us_stocks", "cn_stocks", "kr_stocks", "bonds", "gold",
-        "sentiment", "volatility", "credit", "valuation", "macro", "volume", "breadth", "yen_carry"];
+      const order = Object.keys(WEIGHT_LABELS);   // 与权重面板同源，避免两处硬编码不一致
       const items = [];
       order.forEach((k) => {
         const mk = m[k]; if (!mk) return;
-        let s = mk.score;
-        if (k === "macro" && mk.detail) {
-          const parts = Object.values(mk.detail).map((x) => x.score);
-          s = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-        }
+        const s = mk.score;
         if (s == null) return;
         if (Math.abs(s) >= 0.15) items.push({ label: WEIGHT_LABELS[k] || k, score: s, verbal: verbalHint(k, s) });
       });
@@ -586,8 +555,10 @@
   }
 
   // 顶部元信息：数据时点（UTC + 北京时间）与维度覆盖度。
-  // 维度分母取 professional.weights（算法设计的 13 维），分子取实际可用维度；
-  // 两者不一致时说明部分维度因未配置密钥/源不可达被剔除并按可用维度归一化。
+  // 维度分母取 professional.weights 的键数（算法设计维度），分子取实际可用维度；
+  // 两者不一致时说明某些维度数据源本次不可达，已按可用维度归一化。
+  // 注：分母是动态的——2026-10-31 移除信用/宏观两维后，权重表由 13 项变 11 项，
+  // 此处无需改动即自动显示「11 / 11」。
   function renderMeta(d) {
     const el = document.getElementById("updated");
     const raw = d.generated_at || "";
@@ -617,7 +588,7 @@
     dimsEl.textContent = total ? `${avail} / ${total}` : String(avail);
     if (total && avail < total) {
       dimsEl.title = `设计 ${total} 维，本次实际可用 ${avail} 维；`
-        + `缺失维度（多为未配置 FRED_KEY 的信用/宏观）已从加权中剔除，并按可用维度重新归一化。`;
+        + `缺失维度（该维度数据源本次不可达）已从加权中剔除，并按可用维度重新归一化。`;
     } else {
       dimsEl.removeAttribute("title");
     }
