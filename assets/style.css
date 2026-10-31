@@ -125,7 +125,10 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
    放左栏 200px 里会折成两行、和"综合分"挤在一起，容易被读成第二个结论；
    拉到底部加一条上边线，语义上就变成"附注"，位置信息放在最后才被看到。
    配色刻意用中性灰，不跟涨跌红绿，它只描述历史位置，不参与判定。 */
-.hero-foot { flex: 1 0 100%; margin-top: 6px; padding-top: 10px;
+/* 用 flex-basis:auto + width:100% 而不是 flex:1 0 100%：
+   后者在窄屏（.hero 变 flex-direction:column）时 100% 会按"高度"解析，
+   脚注会被拉成整屏高。写成 width 就没有方向歧义。 */
+.hero-foot { flex: 0 0 auto; width: 100%; margin-top: 6px; padding-top: 10px;
   border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
   line-height: 1.5; cursor: help; }
 .hero-foot b { color: var(--text); font-weight: 600; }
