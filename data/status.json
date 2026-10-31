@@ -1,26 +1,24 @@
 {
   "status": "ok",
-  "generated_at": "2026-10-31T05:43:39Z",
+  "generated_at": "2026-10-31T06:02:30Z",
   "overall": {
-    "score": 0.0,
+    "score": -0.091,
     "verdict": "neutral"
   },
   "consensus": {
-    "bull": 2,
+    "bull": 1,
     "bear": 4,
-    "neutral": 3,
-    "total": 9,
-    "net": -2,
+    "neutral": 2,
+    "total": 7,
+    "net": -3,
     "need": 3,
-    "ratio": -0.222,
-    "verdict": "neutral"
+    "ratio": -0.429,
+    "verdict": "bear"
   },
-  "risk_gauge": {
-    "vix": 19.42,
-    "regime": "正常",
-    "source": "VIX"
-  },
-  "dims_available": 9,
-  "dims_total": 9,
+  "data_as_of": "2026-10-30",
+  "freshness_status": "market_closed",
+  "freshness_lag_days": 1,
+  "dims_available": 7,
+  "dims_total": 7,
   "note": "全部维度可用"
 }
