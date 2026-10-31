@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write        # 提交生成的 data/market.json
+  actions: write         # 触发 pages.yml（见最后一步的说明）
 
 concurrency:
   group: update-market
@@ -37,13 +38,26 @@ jobs:
         run: python scripts/fetch_data.py
 
       - name: Commit updated data
+        id: commit
         run: |
           git config user.email "action@github.com"
           git config user.name "github-actions[bot]"
           git add -A data/
           if git diff --cached --quiet; then
             echo "无数据变化，跳过提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "data: 自动更新市场牛熊数据 $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # 必须显式触发 Pages 部署。
+      # 原因：用 GITHUB_TOKEN 推送的提交**不会**触发其他 workflow（GitHub 的防递归机制），
+      # 所以 pages.yml 的 on.push 收不到这次提交，线上会一直停留在上一次部署的旧数据上。
+      # 2026-10-31 实测确认：update.yml 成功提交后，线上 market.json 仍是上一版（13 维口径）。
+      - name: Trigger Pages redeploy
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --ref main

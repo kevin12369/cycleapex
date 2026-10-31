@@ -76,8 +76,10 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
 3. **Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"**。
 4. 两个工作流的分工：
    - `update.yml`：工作日 21:00 UTC 由 cron 触发抓取与判定，只提交 `data/`；
-   - `pages.yml`：任意 push 到 `main` 后触发发布。
+   - `pages.yml`：发布 `dist/`（由 push 或 `workflow_dispatch` 触发）。
 5. 可到 Actions 页手动 `Run workflow` 立即触发。
+
+> **一个容易踩的坑（已修复，2026-10-31 实测）**：用 `GITHUB_TOKEN` 推送的提交**不会**触发其他 workflow（GitHub 的防递归机制）。所以 `update.yml` 提交完数据后，`pages.yml` 的 `on.push` 根本收不到这次提交，**线上会一直停留在上一次部署时的旧数据上**——而 Actions 里两个 run 都显示 success，很难察觉。现在 `update.yml` 末尾显式多跑一步 `gh workflow run pages.yml`（需要 `actions: write` 权限），由它把新数据推上线。
 
 **`pages.yml` 发布的是装配出来的 `dist/`，不是仓库根目录**：只拷贝 `index.html`、`report.html`、`assets/app.js`、`assets/style.css`、`data/market.json`、`data/paradigm.json` 与 `.nojekyll`。因此 `data/history/`（80 余份快照、约 88MB）、`scripts/`、`.github/` 都不会上线——线上访问 `data/history/*.json` 返回 404 属**预期行为**，发布体积从 116MB 降到约 2MB。新增前端文件时，请同步更新 `pages.yml` 的拷贝清单。
 
