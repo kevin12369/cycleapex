@@ -327,6 +327,7 @@ def main():
             print(f"  [SKIP] {label} 取不到历史，跳过该标的的评估")
             continue
         res = analyse(comp, t, args.horizon)
+        res["target_series"] = t.get("symbol") or t.get("name")
         out["targets"][label] = res
         if "error" in res:
             print(f"  {res['error']}")
