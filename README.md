@@ -49,7 +49,7 @@
 ## 本地运行
 
 ```bash
-pip install requests
+pip install -r requirements.txt
 python scripts/fetch_data.py          # 生成 data/market.json
 python -m http.server 8000            # 预览（必须用 http 服务，不能用 file://）
 # 浏览器打开 http://localhost:8000
