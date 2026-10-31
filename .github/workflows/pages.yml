@@ -37,6 +37,9 @@ jobs:
           # 前端实际只 fetch 这两个数据文件（见 assets/app.js 的 fetch 调用）
           cp data/market.json dist/data/
           cp data/paradigm.json dist/data/
+          # status.json 不是给前端用的，是给外部监控/告警读的（dims_available、
+          # data_as_of、write_skipped）。之前漏了这一行，线上一直 404。
+          [ -f data/status.json ] && cp data/status.json dist/data/ || true
           echo "=== 发布产物清单 ===" && find dist -type f | sort
           echo "=== 总体积 ===" && du -sh dist
 
