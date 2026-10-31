@@ -40,6 +40,11 @@ SESSION.headers.update({"User-Agent": UA, "Accept": "application/json,text/plain
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 OUT_FILE = os.path.join(OUT_DIR, "market.json")
 
+# 历史快照保留天数：超过则删除（0 或负数表示不做清理）。
+# 每次快照约 1.2MB，不设上限时仓库会无限膨胀（2026-10 已达 59 份/58MB）。
+# 更早的快照请另行归档到仓库之外，不要留在 git 里。
+HISTORY_KEEP_DAYS = int(os.environ.get("HISTORY_KEEP_DAYS", "30"))
+
 def load_env_local():
     """无依赖加载项目根目录 .env，避免把密钥写进脚本或仓库。"""
     env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -620,6 +625,33 @@ def series_indicators_block(s):
     return {"ma": round(ma_s, 3), "rsi": round(rsi_s, 3), "macd": round(macd_s, 3)}
 
 
+def prune_history(hist_dir, keep_days):
+    """删除 hist_dir 中早于 keep_days 天的 YYYY-MM-DD.json，返回被删文件名列表。
+
+    只认严格匹配日期的文件名，其它文件一律不动。keep_days <= 0 时直接跳过，
+    避免因配置缺失把整个历史目录清空。
+    """
+    removed = []
+    if keep_days <= 0:
+        return removed
+    cutoff = dt.date.today() - dt.timedelta(days=keep_days)
+    for fn in sorted(os.listdir(hist_dir)):
+        m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})\.json", fn)
+        if not m:
+            continue
+        try:
+            d = dt.date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        if d < cutoff:
+            try:
+                os.remove(os.path.join(hist_dir, fn))
+                removed.append(fn)
+            except OSError as e:
+                print(f"  [WARN] 删除过期快照 {fn} 失败: {e}")
+    return removed
+
+
 # ----------------------------------------------------------------------------
 # 主流程
 # ----------------------------------------------------------------------------
@@ -1054,6 +1086,10 @@ def main():
         with open(snap, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         print(f"== 已归档快照 {snap} ==")
+        removed = prune_history(hist_dir, HISTORY_KEEP_DAYS)
+        if removed:
+            print(f"== 快照保留 {HISTORY_KEEP_DAYS} 天，清理 {len(removed)} 份过期快照"
+                  f"（{removed[0]} ~ {removed[-1]}）==")
     except Exception as e:  # noqa
         print(f"  [WARN] 快照归档失败（不影响主输出）: {e}")
 
