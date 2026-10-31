@@ -300,22 +300,32 @@ def main():
         "targets": {},
     }
 
-    # 两个标的各算一遍：A股看沪深300，美股看标普500
-    for label, secid, yh in (("沪深300", "1.000300", "000300.SS"),
-                             ("标普500", None, "^GSPC")):
+    # 两个标的各算一遍：A股看沪深300（拿不到就退到上证），美股看标普500。
+    # 东财对单个 secid 的抖动是随机的（同一轮里 000001.SS 成功、000300.SS 只给 1 根），
+    # 所以标的必须有降级链，否则「A股 没有结论」会变成常态。
+    for label, chain in (
+        ("沪深300", [("1.000300", "000300.SS"), ("1.000001", "000001.SS")]),
+        ("标普500", [(None, "^GSPC")]),
+    ):
         print(f"\n-- 评估标的：{label} --")
-        # 优先复用手上已有的序列，避免重复请求（也避免两次抓取拿到不同结果）
-        t = cache.get(yh)
-        if t is None:
+        t = None
+        for secid, yh in chain:
+            # 优先复用手上已有的序列，避免重复请求（也避免两次抓取拿到不同结果）
+            t = cache.get(yh)
+            if t is not None:
+                break
             raw = None
             if secid:
                 raw = fetch_eastmoney_kline(secid, beg="20050101", lmt=100000)
             if not bars_ok(raw):
                 raw = fetch_yahoo(yh, rng=f"{args.years}y")
-            if not bars_ok(raw):
-                print(f"  [SKIP] {label} 取不到历史（东财与 Yahoo 均不可用）")
-                continue
-            t = build_series(label, secid or yh, raw)
+            if bars_ok(raw):
+                t = build_series(label, secid or yh, raw)
+                break
+            print(f"  [WARN] {yh} 不可用，尝试下一个标的")
+        if t is None:
+            print(f"  [SKIP] {label} 取不到历史，跳过该标的的评估")
+            continue
         res = analyse(comp, t, args.horizon)
         out["targets"][label] = res
         if "error" in res:
