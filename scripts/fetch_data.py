@@ -832,6 +832,7 @@ def main():
 
     # ---------- 债券维度（美债10Y + 中债10Y，口径=收益率20日变化量） ----------
     bond_series = []
+    cn10y = None            # 独立持有，勿用 bond_series[-1] 反推（会拿到美债）
     if us10y:
         bond_series.append(us10y)
     cn10y_raw = fetch_china_10y_yield()
@@ -843,15 +844,21 @@ def main():
             print(f"  [OK] 中债10Y 20日变化 分 {cn10y['score']}")
         else:
             print("  [WARN] 中债10Y 清洗后无有效 K 线，已跳过")
+    else:
+        # 这条腿长期不可达（东财 CN_10Y 接口在 runner 上返回 result=None），
+        # 显式打出来，避免读者以为债券维度是「中美两条腿」的平均。
+        print("  [WARN] 中债10Y 源不可达，债券维度仅用美债10Y单腿")
     if bond_series:
         bond_score, bond_skipped = avg_usable(bond_series)
         if bond_skipped:
             print(f"  [WARN] 债券维度排除数据不足序列：{'、'.join(bond_skipped)}")
+        bond_desc = ("中美10Y收益率20日变化(下行=债牛)" if cn10y is not None
+                     else "美债10Y收益率20日变化(下行=债牛)")
         add_dim("bonds", "债券", bond_score, verdict_from_score(bond_score),
-                "中美10Y收益率20日变化(下行=债牛)", {"series": bond_series, "skipped": bond_skipped})
+                bond_desc, {"series": bond_series, "skipped": bond_skipped})
         add_heat("债券", "美债10Y-20日变化", us10y["score"] if us10y else None)
-        if cn10y_raw:
-            add_heat("债券", "中债10Y-20日变化", bond_series[-1]["score"])
+        if cn10y is not None:
+            add_heat("债券", "中债10Y-20日变化", cn10y["score"])
 
     # ---------- 波动率：已整体移除（2026-10-31 第三次修订） ----------
     # 80 份快照实测：
