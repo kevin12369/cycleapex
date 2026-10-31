@@ -116,6 +116,23 @@
     return (mk.score == null) ? null : mk.score;
   }
 
+  // 剔除情绪维度的 6 维分数。标定用的十年十分位切点里没有情绪维度
+  // （恐贪指数没有历史序列），拿 7 维综合分去找位置会系统性高估一档。
+  // 跟随 currentWeights 一起算，这样拖动权重滑块时这行也跟着走。
+  function scoreExSentiment(wmap) {
+    const m = DATA.markets || {};
+    let acc = 0, tw = 0;
+    Object.keys(m).forEach((k) => {
+      if (k === "sentiment") return;
+      const w = wmap ? wmap[k] : 1;
+      if (!(w > 0)) return;
+      const s = getDimScore(k);
+      if (s == null) return;          // 缺数据的维度不投票，也不当 0 分拉低均值
+      acc += s * w; tw += w;
+    });
+    return tw ? acc / tw : null;
+  }
+
   function computeOverall(wmap) {
     let tw = 0, acc = 0;
     for (const [k, w] of Object.entries(wmap)) {
@@ -271,6 +288,39 @@
         ? "综合分 " + v + " · 距触发判定还差 " + gap
         : "综合分 " + v + " · " + (ov.verdict === "bull" ? "偏多" : ov.verdict === "bear" ? "偏空" : "中性");
     }
+    // 十年分位：只回答「今天这个分，放在过去十年里算高还是低」，
+    // 不参与多空判定，所以刻意用中性灰、且不跟着徽章变色。
+    // 该行还带着一个不肯美化的负结果：分位与后续收益的相关性接近零甚至为负，
+    // 所以鼠标悬停时会明说「只描述位置，不能当买卖信号」。
+    const rank = document.getElementById("heroRank");
+    if (rank) {
+      const ref = DATA.reference;
+      const s6 = scoreExSentiment(currentWeights);
+      if (!ref || !Array.isArray(ref.cuts) || ref.cuts.length < 10 || s6 == null) {
+        rank.textContent = "";
+        rank.removeAttribute("title");
+      } else {
+        let b = 1;
+        for (let i = 0; i < ref.cuts.length; i++) if (s6 >= ref.cuts[i]) b = i + 1;
+        const exp = (ref.expectation_pct || [])[b - 1];
+        const win = (ref.win_rate_pct || [])[b - 1];
+        const fmt = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+        let html = "十年位置 <b>第 " + b + " / 10 档</b>";
+        if (exp != null) html += " · 同档后 " + ref.horizon_days + " 日均 " + fmt(exp);
+        rank.innerHTML = html;
+
+        const bits = [ref.basis];
+        if (ref.n_days) bits.push("样本 " + ref.n_days + " 个交易日");
+        if (win != null) bits.push("同档上涨概率 " + win + "%");
+        if (ref.corr != null) {
+          bits.push("该分位与后续 " + ref.horizon_days + " 日收益相关性 r=" + ref.corr.toFixed(2) +
+            (ref.corr < 0.1 ? "（接近零或为负——这一行只描述位置，不能当买卖信号）" : ""));
+        }
+        if (ref.calibrated_at) bits.push("标定于 " + String(ref.calibrated_at).slice(0, 10));
+        rank.title = bits.join(" · ");
+      }
+    }
+
     const split = document.getElementById("heroSplit");
     if (split) {
       const parts = [{ key: "cn_stocks", label: "🇨🇳 A股" }, { key: "us_stocks", label: "🇺🇸 美股" }];

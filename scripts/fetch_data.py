@@ -755,6 +755,42 @@ def write_json_compact(path, obj):
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def load_reference_cuts():
+    """读 scripts/calibrate.py 产出的十年十分位切点，用于「今天这个分算高还是低」。
+
+    标定口径是**不含情绪维度的 6 维**（恐贪指数没有历史序列），
+    所以前端必须拿同样 6 维的分数来定位，不能直接拿 7 维综合分去比。
+    文件缺失或格式变化时返回 None —— 前端要能优雅地不显示这一行。"""
+    path = os.path.join(OUT_DIR, "calibration.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        cal = json.load(open(path, encoding="utf-8"))
+        targets = cal.get("targets") or {}
+        tgt = targets.get("标普500") or targets.get("沪深300") or {}
+        hz = (tgt.get("by_horizon") or {}).get("21") or {}
+        dec = hz.get("deciles") or []
+        if len(dec) < 10:
+            return None
+        return {
+            "cuts": [d["score_min"] for d in dec],
+            "upper": dec[-1]["score_max"],
+            "expectation_pct": [d["fwd_mean_pct"] for d in dec],
+            # 胜率与相关系数一起下发：分位本身是「位置描述」，不是买卖信号。
+            # calibrate.py 实测 corr 为负（越偏多、后续并不更好），
+            # 不把这层一起显示出来，读者会把这行当成绩效背书。
+            "win_rate_pct": [d["win_rate_pct"] for d in dec],
+            "corr": hz.get("corr_with_fwd"),
+            "n_days": hz.get("n_days"),
+            "basis": "标普500 十年综合分十分位（不含情绪维度）",
+            "calibrated_at": cal.get("generated_at"),
+            "horizon_days": 21,
+        }
+    except Exception as e:  # noqa
+        print(f"  [WARN] calibration.json 读取失败，十年分位不输出: {e}")
+        return None
+
+
 def payload_coverage(p):
     """数据覆盖度 = (可用维度数, 可用子指标数)。
 
@@ -1078,6 +1114,14 @@ def main():
     wsum = sum(WEIGHTS[k] for k in present)
     overall = round(sum(dims[k] * WEIGHTS[k] for k in present) / wsum, 3) if wsum else 0.0
 
+    # 同口径（不含情绪）的分数：标定的十分位切点是用 6 维历史重建出来的，
+    # 恐贪指数没有历史序列。要回答「今天这个分放到十年里算高还是低」，
+    # 必须拿同样 6 维口径的分数去比，否则是拿苹果比橘子。
+    ex_sent = {k: v for k, v in present.items() if k != "sentiment"}
+    wsum_ex = sum(WEIGHTS[k] for k in ex_sent)
+    overall_ex = (round(sum(dims[k] * WEIGHTS[k] for k in ex_sent) / wsum_ex, 3)
+                  if wsum_ex else None)
+
     # ---------- 共识计数（与加权平均并列，两条腿分开走） ----------
     # 加权平均的毛病：维度高度共线时（情绪↔估值 r=−0.89）正负互相抵消，
     # 结果永远贴着 0，阈值 ±0.33 几乎打不到，Hero 大字恒为"震荡"。
@@ -1184,7 +1228,13 @@ def main():
             "fng": "feargreedchart.com",
         },
         "markets": markets,
-        "overall": {"score": overall, "verdict": verdict_from_score(overall)},
+        "overall": {"score": overall, "verdict": verdict_from_score(overall),
+                    # 与十年分位参标同口径（6 维、剔除情绪）的分数
+                    "score_ex_sentiment": overall_ex},
+        # 十年分位参标：回答「今天这个分放到十年里算高还是低」。
+        # 注意它不是预测器 —— 标定实测综合分与前瞻 21 日收益的 r 只有 −0.06 ~ −0.11，
+        # 详见 README「综合分的可预测性检验」。
+        "reference": load_reference_cuts(),
         # 两条腿并列：加权平均看"平均多偏"，共识计数看"几个维度偏"。
         # 前端把两者都渲染出来，分歧本身即信息。
         "consensus": consensus,
