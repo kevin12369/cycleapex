@@ -106,42 +106,58 @@ def http_get(url, params=None, headers=None, retries=3, timeout=20):
 # ----------------------------------------------------------------------------
 # 指标计算（纯函数，便于单测与复用）
 # ----------------------------------------------------------------------------
-def sma(values, window):
+def sma(values, window, min_valid=None):
+    """简单移动平均。
+
+    只对窗口内的**有效值**（非 None）求平均，不再把缺失值当 0 计入。
+    min_valid 为窗口内所需的最少有效值个数，默认等于 window（要求完整窗口）；
+    有效值不足时返回 None。
+
+    旧实现是 `s += v if v is not None else 0` 且分母固定为 window，
+    一旦窗口里混入一个 None，就会产出一个"偏低但看起来正常"的假均线，
+    进而让 MA 排列判定虚假转空 —— 静默错，比报错更难发现。
+    """
     out = [None] * len(values)
-    if len(values) < window:
+    if window <= 0 or len(values) < window:
         return out
-    s = 0.0
-    for i, v in enumerate(values):
-        s += v if v is not None else 0
-        if i >= window:
-            s -= values[i - window] or 0
-        if i >= window - 1:
-            out[i] = round(s / window, 4)
+    need = window if min_valid is None else min_valid
+    for i in range(window - 1, len(values)):
+        chunk = [v for v in values[i - window + 1:i + 1] if v is not None]
+        if len(chunk) >= need:
+            out[i] = round(sum(chunk) / len(chunk), 4)
     return out
 
 
 def rsi(values, period=14):
+    """RSI(period)。
+
+    先把 None 剔除再在有效序列上计算，结果按原下标回填。
+    旧实现直接做 `values[i] - values[i-1]`，遇到 None 会抛 TypeError，
+    没有兜底 —— 只要上游漏一个缺失值，整轮抓取就会崩。
+    """
     out = [None] * len(values)
-    if len(values) <= period:
+    idx = [i for i, v in enumerate(values) if v is not None]
+    if len(idx) <= period:
         return out
+    valid = [values[i] for i in idx]
     gains = 0.0
     losses = 0.0
     for i in range(1, period + 1):
-        d = values[i] - values[i - 1]
+        d = valid[i] - valid[i - 1]
         if d >= 0:
             gains += d
         else:
             losses -= d
     avg_gain = gains / period
     avg_loss = losses / period
-    out[period] = _rsi_val(avg_gain, avg_loss)
-    for i in range(period + 1, len(values)):
-        d = values[i] - values[i - 1]
+    out[idx[period]] = _rsi_val(avg_gain, avg_loss)
+    for k in range(period + 1, len(valid)):
+        d = valid[k] - valid[k - 1]
         g = d if d >= 0 else 0
         l = -d if d < 0 else 0
         avg_gain = (avg_gain * (period - 1) + g) / period
         avg_loss = (avg_loss * (period - 1) + l) / period
-        out[i] = _rsi_val(avg_gain, avg_loss)
+        out[idx[k]] = _rsi_val(avg_gain, avg_loss)
     return out
 
 
@@ -153,6 +169,13 @@ def _rsi_val(avg_gain, avg_loss):
 
 
 def macd(values, fast=12, slow=26, signal=9):
+    """MACD(12,26,9)。
+
+    注意 DEA 的算法：把 DIF 的 None 剔除后压成连续序列再算 EMA，然后按序回填原下标。
+    这是为了保持"每个有效 DIF 对应一个 DEA"，不是严格的滑动窗口对齐；
+    由于 _ema 用首个有效值做种子（不预热 skip 期），前 signal 根 DEA 偏敏感，
+    属既有近似，不在本次修复范围内，仅在此标注以免被当成精确值引用。
+    """
     ema_fast = _ema(values, fast)
     ema_slow = _ema(values, slow)
     dif = [None if (a is None or b is None) else round(a - b, 4)
@@ -171,6 +194,11 @@ def macd(values, fast=12, slow=26, signal=9):
 
 
 def _ema(values, period):
+    """指数移动平均。
+
+    None 的处理是"沿用上一个有效 EMA 值"（hold-last），不参与递推、也不中断序列；
+    序列开头若为 None 则保持 None，直到出现首个有效值做种子（不做预热 discard）。
+    """
     out = [None] * len(values)
     k = 2 / (period + 1)
     prev = None
