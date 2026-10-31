@@ -988,7 +988,8 @@ def main():
             "overall": payload["overall"],
             "dims_available": len(present),
             "dims_total": len(WEIGHTS),
-            "note": "部分维度可能因未配置密钥/网络受限而缺失，已自动归一化",
+            "note": ("全部维度可用" if len(present) == len(WEIGHTS)
+                     else "部分维度因数据源本次不可达而缺失，已按可用维度归一化"),
         }
         with open(os.path.join(OUT_DIR, "status.json"), "w", encoding="utf-8") as f:
             json.dump(status, f, ensure_ascii=False, indent=2)
