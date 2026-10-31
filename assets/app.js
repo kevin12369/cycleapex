@@ -486,13 +486,17 @@
     ALL_SERIES.forEach((it) => {
       const s = it.s;
       const n = s.close.length - 1;
-      const ma = (s.ma20[n] != null && s.ma60[n] != null && s.ma200[n] != null)
+      // 不可判定的序列（K 线不足 20 根）三项一律显示 "—"。
+      // 注意不能只判 null：单根序列的 macdHist 在数学上是 0.0（不是 null），
+      // 直接判 != null 会把它印成"绿柱"，而这根柱子并不携带任何信息。
+      const na = s.usable === false;
+      const ma = (!na && s.ma20[n] != null && s.ma60[n] != null && s.ma200[n] != null)
         ? ((s.close[n] > s.ma20[n] ? 1 : 0) + (s.ma20[n] > s.ma60[n] ? 1 : 0) + (s.ma60[n] > s.ma200[n] ? 1 : 0))
         : null;
       const maTxt = ma == null ? "—" : ["空头排列", "", "", "", "多头排列"][ma];
-      const rsi = s.rsi[n] != null ? s.rsi[n] : "—";
-      const macd = s.macdHist[n] != null ? (s.macdHist[n] > 0 ? "红柱" : "绿柱") : "—";
-      const vs = s.volScore != null ? s.volScore : null;
+      const rsi = (!na && s.rsi[n] != null) ? s.rsi[n] : "—";
+      const macd = (!na && s.macdHist[n] != null) ? (s.macdHist[n] > 0 ? "红柱" : "绿柱") : "—";
+      const vs = (na || s.volScore == null) ? null : s.volScore;
       const volCls = vs == null ? "neutral" : (vs > 0.2 ? "bull" : vs < -0.2 ? "bear" : "neutral");
       const volTxt = vs == null ? "—" : (vs > 0.2 ? "放量配合↑" : vs < -0.2 ? "派发/缩量↓" : "中性");
       const tr = document.createElement("tr");
