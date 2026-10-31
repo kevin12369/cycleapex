@@ -27,7 +27,12 @@
     ["us_stocks", "cn_stocks", "bonds", "kr_stocks", "gold", "fx"].forEach((k) => {
       const mk = m[k];
       if (mk && mk.series) {
-        mk.series.forEach((s) => list.push({ market: mk.label, name: s.name, s: s }));
+        mk.series.forEach((s) => list.push({
+          market: mk.label, name: s.name, s: s,
+          // usable === false：K 线不足 20 根，指标算不出来（后端已把它排除在维度平均之外）。
+          // 这里仍保留在下拉框里，方便核对"确实抓到了当天价、只是没历史"，但标注出来避免误读。
+          text: s.usable === false ? `${s.name}（仅 ${s.bars} 根·不可判定）` : s.name,
+        }));
       }
     });
     return list;
@@ -492,7 +497,7 @@
       const volTxt = vs == null ? "—" : (vs > 0.2 ? "放量配合↑" : vs < -0.2 ? "派发/缩量↓" : "中性");
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${it.market}</td><td>${s.name}</td><td>${s.latest}</td>
-        <td class="score-pill ${s.verdict}">${(s.score * 100).toFixed(0)}</td>
+        <td class="score-pill ${s.verdict}">${s.score == null ? "—" : (s.score * 100).toFixed(0)}</td>
         <td><span class="badge ${s.verdict}">${VERDICT_TEXT[s.verdict]}</span></td>
         <td>${maTxt}</td><td>${rsi}</td><td>${macd}</td>
         <td class="score-pill ${volCls}">${volTxt}</td>`;
@@ -536,10 +541,10 @@
     sel.innerHTML = "";
     ALL_SERIES.forEach((it, i) => {
       const opt = document.createElement("option");
-      opt.value = i; opt.textContent = `${it.market} · ${it.name}`;
+      opt.value = i; opt.textContent = `${it.market} · ${it.text || it.name}`;
       sel.appendChild(opt);
       const co = document.createElement("option");
-      co.value = i; co.textContent = `${it.market} · ${it.name}`;
+      co.value = i; co.textContent = `${it.market} · ${it.text || it.name}`;
       cmp.appendChild(co);
     });
     sel.value = state.seriesId;

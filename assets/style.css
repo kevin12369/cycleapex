@@ -77,6 +77,7 @@ table.detail th { color: var(--muted); font-weight: 600; }
 .score-pill.bull { color: var(--bull); }
 .score-pill.bear { color: var(--bear); }
 .score-pill.neutral { color: var(--neutral); }
+.score-pill.unknown { color: #6b7280; }   /* 数据不足，分值为 — */
 
 footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center; border-top: 1px solid var(--border); margin-top: 30px; }
 .disclaimer { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--neutral); padding: 10px 14px; border-radius: 8px; margin-top: 14px; font-size: 12px; color: var(--muted); }
