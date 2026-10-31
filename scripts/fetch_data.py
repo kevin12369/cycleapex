@@ -1046,9 +1046,14 @@ def main():
             structural += "；日元套息顺畅，为风险偏好提供支撑"
 
     # ④ 共识与加权分歧（这两者不一致时本身就是结论）
-    if consensus_verdict != "neutral" and verdict_from_score(overall) != consensus_verdict:
-        structural += (f"；注意两个口径不一致：加权平均判{verdict_from_score(overall)}、"
-                       f"共识投票判{consensus_verdict}，说明分歧集中在少数极端维度上")
+    # 文案里必须用中文判定词，与前端 VERDICT_TEXT 一致；早先直接拼 "neutral/bear"
+    # 会把英文术语漏到页面上，与「全文去英文风险术语」的口径冲突。
+    _CN = {"bull": "牛市", "bear": "熊市", "neutral": "震荡"}
+    _w_verdict = verdict_from_score(overall)
+    if consensus_verdict != "neutral" and _w_verdict != consensus_verdict:
+        structural += (f"；注意两个口径不一致：加权平均判{_CN.get(_w_verdict, '震荡')}、"
+                       f"共识投票判{_CN.get(consensus_verdict, '震荡')}，"
+                       f"说明分歧集中在少数极端维度上")
     if structural:
         structural += "。"
 
