@@ -43,7 +43,19 @@ OUT_FILE = os.path.join(OUT_DIR, "market.json")
 # 历史快照保留天数：超过则删除（0 或负数表示不做清理）。
 # 每次快照约 1.2MB，不设上限时仓库会无限膨胀（2026-10 已达 59 份/58MB）。
 # 更早的快照请另行归档到仓库之外，不要留在 git 里。
-HISTORY_KEEP_DAYS = int(os.environ.get("HISTORY_KEEP_DAYS", "30"))
+def _env_int(name, default):
+    """读整型环境变量；缺失或非法值都退回默认，避免一个拼错的值让整轮抓取崩掉。"""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        print(f"  [WARN] 环境变量 {name}={raw!r} 非整数，已改用默认值 {default}")
+        return default
+
+
+HISTORY_KEEP_DAYS = _env_int("HISTORY_KEEP_DAYS", 30)
 
 def load_env_local():
     """无依赖加载项目根目录 .env，避免把密钥写进脚本或仓库。"""
