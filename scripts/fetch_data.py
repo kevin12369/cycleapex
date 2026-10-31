@@ -673,6 +673,34 @@ def series_indicators_block(s):
     return {"ma": _r2(ma_s), "rsi": _r2(rsi_s), "macd": _r2(macd_s)}
 
 
+def payload_coverage(p):
+    """数据覆盖度 = (可用维度数, 可用子指标数)。
+
+    用它判断「同一天的两次跑批哪次更完整」。只数个数、不看内容，
+    因为插值/权重的细微差异不该阻止更新，但丢了一整个指数该阻止。"""
+    dims_n = len((p.get("professional") or {}).get("dimensions") or {})
+    return (dims_n, len(p.get("heatmap") or []))
+
+
+def should_keep_previous(path, payload, as_of):
+    """同截止日重跑护栏：目标文件已存在、截止日相同、且覆盖度更高时返回 True。
+
+    实测 2026-10-31：首跑拿到 A股 四个指数（27 条子指标），重跑时东财
+    RemoteDisconnected，沪深300/科创50/创业板指 各只剩 1 根 K 线被排除，
+    A股 退化成「上证单腿」（18 条）。若无此护栏，越跑越差。
+    只在与上一份截止日相同时生效 —— 不会把旧一天的数据锁死。"""
+    if not os.path.exists(path):
+        return False
+    try:
+        old = json.load(open(path, encoding="utf-8"))
+    except Exception:  # noqa
+        return False
+    old_as_of = (old.get("data_freshness") or {}).get("as_of")
+    if not (old_as_of and as_of and old_as_of == as_of):
+        return False
+    return payload_coverage(old) > payload_coverage(payload)
+
+
 def prune_history(hist_dir, keep_days):
     """删除 hist_dir 中早于 keep_days 天的 YYYY-MM-DD.json，返回被删文件名列表。
 
@@ -1114,10 +1142,25 @@ def main():
         sys.exit(2)
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    print(f"== 完成，写入 {OUT_FILE} | 综合分 {overall} {payload['overall']['verdict']}"
-          f" | 共识 {bull_n}多/{neutral_n}中/{bear_n}空 → {consensus_verdict} ==")
+
+    # ---------- 同日重跑护栏：不许用「更差」的结果覆盖「更好」的 ----------
+    new_cov = payload_coverage(payload)
+    as_of_now = freshness.get("as_of")
+    keep_prev = should_keep_previous(OUT_FILE, payload, as_of_now)
+    if keep_prev:
+        try:
+            old_cov = payload_coverage(json.load(open(OUT_FILE, encoding="utf-8")))
+        except Exception:  # noqa
+            old_cov = ("?", "?")
+        print(f"== 同日重跑但覆盖度下降（维度/子指标 {old_cov[0]}/{old_cov[1]} → "
+              f"{new_cov[0]}/{new_cov[1]}），疑似数据源抖动；"
+              f"保留上一份 market.json 不覆盖 ==")
+
+    if not keep_prev:
+        with open(OUT_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"== 完成，写入 {OUT_FILE} | 综合分 {overall} {payload['overall']['verdict']}"
+              f" | 共识 {bull_n}多/{neutral_n}中/{bear_n}空 → {consensus_verdict} ==")
 
     # ---------- 历史快照归档（供历史回看 / 回测基线 / 失败回滚） ----------
     try:
@@ -1146,9 +1189,15 @@ def main():
         else:
             snap = os.path.join(hist_dir, dt.date.today().isoformat() + ".json")
 
-        with open(snap, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"== 已归档快照 {snap} ==")
+        # 与 market.json 同一道护栏：目标快照已存在且覆盖度更高时，不覆盖。
+        if should_keep_previous(snap, payload, freshness.get("as_of")):
+            snap_cov = payload_coverage(json.load(open(snap, encoding="utf-8")))
+            print(f"== 快照 {os.path.basename(snap)} 覆盖度更高"
+                  f"（{snap_cov[0]}/{snap_cov[1]} > {new_cov[0]}/{new_cov[1]}），不覆盖 ==")
+        else:
+            with open(snap, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            print(f"== 已归档快照 {snap} ==")
         removed = prune_history(hist_dir, HISTORY_KEEP_DAYS)
         if removed:
             print(f"== 快照保留 {HISTORY_KEEP_DAYS} 天，清理 {len(removed)} 份过期快照"

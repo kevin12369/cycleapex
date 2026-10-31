@@ -18,8 +18,8 @@
        │ 网页推送                                                                 渲染
  免密钥/可选密钥                                                                  ┌─────────────────┐
  数据源：                                                                         │  GitHub Pages   │
- • Yahoo Finance (美股/中债指数)      • 东方财富 push2his (A股)                   │  index.html +   │
- • multpl.com (CAPE / 盈利收益率)     • feargreedchart.com (恐惧贪婪)            │  assets/app.js  │
+ • Yahoo Finance (美股/韩股/黄金/汇率)  • 东方财富 push2his (A股)                 │  index.html +   │
+ • Yahoo ^TNX (美债 10Y)                • feargreedchart.com (恐惧贪婪)           │  assets/app.js  │
                                                                                   │  (ECharts)      │
                                                                                   └─────────────────┘
 ```
@@ -72,7 +72,7 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
 新仓库首次部署时按此操作：
 
 1. 将仓库推送至 GitHub（公共仓库免费，且 Actions 分钟数不限）。
-2. **不需要配置任何 Actions Secret**：所有数据源（Yahoo / 东方财富 / feargreedchart / multpl）均免密钥。
+2. **不需要配置任何 Actions Secret**：所有数据源（Yahoo / 东方财富 / feargreedchart）均免密钥。
 3. **Settings → Pages → Build and deployment → Source 选择 "GitHub Actions"**。
 4. 两个工作流的分工：
    - `update.yml`：工作日 21:00 UTC 由 cron 触发抓取与判定，只提交 `data/`；
@@ -201,7 +201,7 @@ python scripts/backtest.py --multi          # 多窗口分段回测（含 2018/2
 
 ## 可行性要点
 
-- ✅ **数据源全部免密钥**：Yahoo / 东方财富 / feargreedchart / multpl 均无需 API Key，克隆即可运行，不存在密钥配置与泄露面。
+- ✅ **数据源全部免密钥**：Yahoo / 东方财富 / feargreedchart 均无需 API Key，克隆即可运行，不存在密钥配置与泄露面。（原 multpl.com 的 CAPE 已随估值维度移除）
 - ⚠️ **非官方 API 有稳定性风险**：Yahoo、东方财富均非官方接口，可能存在限流/临时封禁/字段改版。
   脚本已实现**多源容错**（A 股东财失败回退 Yahoo）、**脏数据防御**（零价 / 未来日期 / 重复日期）、与**指数退避重试**。
 - ✅ **静态托管零成本**：GitHub Pages 对公共仓库免费；`data/market.json` 实测 **1.89 MiB**（2026-10-31，含 11 条序列的全量 K 线与指标数组），仍远低于单站 1GB / 月 100GB 带宽限制。
@@ -277,10 +277,33 @@ python scripts/backtest.py --multi          # 多窗口分段回测（含 2018/2
 
 历史快照归档也做了去重：如果 `as_of` 与上一份快照相同（没有新数据），不再新增文件，而是原地覆盖——避免同一根 K 线被重复计入回测基线。
 
+### 同日重跑护栏：不许用更差的结果覆盖更好的
+
+去重带来一个新问题：**同一天的第二次跑批会无条件覆盖第一次**。如果第二次赶上数据源抖动，就会把一份完整的快照换成残缺的。
+
+这不是假设。2026-10-31 实测：
+
+| 跑批 | 结果 |
+|---|---|
+| 首跑 06:02 | A 股四指数齐全，27 条子指标，A 股维度 −0.696 |
+| 重跑 06:09 | 东方财富 `RemoteDisconnected`，沪深300 / 科创50 / 创业板指各只剩 1 根 K 线被排除，A 股退化成「上证单腿」，18 条子指标，A 股维度 −0.636 |
+
+页面数字变了，但没有任何报错——因为两次都 `status: ok`。
+
+现在的规则：**仅当 `as_of` 完全相同**（= 同一天的重复跑批），且已存在文件的覆盖度 `(可用维度数, 可用子指标数)` 严格高于本次结果时，跳过写出并打印 `== 同日重跑但覆盖度下降（7/27 → 7/18），疑似数据源抖动；保留上一份 market.json 不覆盖 ==`。
+
+三条边界刻意放宽：
+
+- **只保护同一天**。`as_of` 一旦推进就正常写入，不会把旧一天的数据锁死；
+- **覆盖度相同就放行**。权重调整、文案修订不会改变覆盖度，应当能生效；
+- **旧文件损坏 / `as_of` 缺失时放行**，护栏宁可失效也不能成为故障点。
+
+护栏抽成了独立函数 `should_keep_previous()`，配 `scripts/test_freshness_guard.py`（8 个用例，覆盖无旧文件、同日退化、同日更优、截止日推进、覆盖度相同、旧文件损坏、`as_of` 缺失）。
+
 ## 免责声明
 
 本站点所有牛熊结论均为算法的客观输出，**不构成任何投资建议**。市场有风险，决策需谨慎。
 
 ## 许可
 
-代码以 [MIT License](./LICENSE) 发布。数据来自各公开数据源（Yahoo Finance、东方财富、feargreedchart.com、multpl.com），版权归原数据提供方，使用时请遵守其各自条款。
+代码以 [MIT License](./LICENSE) 发布。数据来自各公开数据源（Yahoo Finance、东方财富、feargreedchart.com），版权归原数据提供方，使用时请遵守其各自条款。
