@@ -271,13 +271,17 @@ def erp_score(e):
 
 def vol_confirm_score(close, vol):
     """量能确认（价量配合）：价涨且放量→配合(正)；价跌且放量→派发(负)。
-    价涨而缩量→动能不足(接近0)；纯量增不表方向，需结合价格方向。返回 [-1,1]。"""
+    价涨而缩量→动能不足(接近0)；纯量增不表方向，需结合价格方向。返回 [-1,1]。
+
+    不可计算时返回 None（而不是 0.0）。0.0 的语义是"价量配合中性"，
+    与"只有 1 根 K 线、根本没算出来"是两回事——混用会让数据不全的序列
+    以"中性"身份稀释同维度里数据完整的序列。"""
     n = len(close) - 1
-    if n < 2:
-        return 0.0
+    if n < 1:
+        return None
     vma = sma(vol, 20)
-    if vma[n] in (None, 0) or vol[n] is None:
-        return 0.0
+    if vma[n] in (None, 0) or vol[n] is None or close[n - 1] in (None, 0):
+        return None
     ratio = vol[n] / vma[n]                       # 相对20日均量的倍数
     ret = close[n] - close[n - 1]
     direction = 1 if ret > 0 else (-1 if ret < 0 else 0)
@@ -547,10 +551,18 @@ def build_series(name, symbol, raw, invert=False):
     ma200 = sma(close, 200)
     rsi_arr = rsi(close, 14)
     dif, dea, hist = macd(close)
-    score = composite_score(close, ma20, ma60, ma200, rsi_arr, hist)
-    if invert:                       # 债券收益率：收益率上行=债市走熊
+    i_last = len(close) - 1
+
+    # 可判定性：至少要能算出 MA20 与 RSI(14)（≥20 根 K 线）。
+    # 达不到就说明这一条序列只抓到一个快照（多源都挂了、只剩当日收盘），
+    # 此时 composite_score 会返回"数据不足的 0.0"，而 0.0 在下游会被读成"中性"。
+    # 必须显式标出来，否则同维度里数据完整的序列会被这个假中性稀释。
+    usable = (ma20[i_last] is not None and rsi_arr[i_last] is not None)
+
+    score = composite_score(close, ma20, ma60, ma200, rsi_arr, hist) if usable else None
+    if score is not None and invert:      # 债券收益率：收益率上行=债市走熊
         score = round(-score, 3)
-    vol_score = vol_confirm_score(close, vol) if len(close) >= 21 else 0.0
+    vol_score = vol_confirm_score(close, vol)   # 不足 21 根时为 None，不是 0
     return {
         "name": name, "symbol": symbol, "dates": dates,
         "open": o, "high": h, "low": l,
@@ -560,26 +572,50 @@ def build_series(name, symbol, raw, invert=False):
         "volMa20": sma(vol, 20),
         "volScore": vol_score,
         "latest": close[-1] if close else None,
+        "bars": len(close),
+        "usable": usable,
         "score": score,
         "verdict": verdict_from_score(score),
     }
 
 
+def avg_usable(series):
+    """对「可判定」的序列求平均分，返回 (平均分, 被排除的序列名)。
+
+    只有一个可用序列时就等于它自己的分；一个都没有则返回 (None, 全部)。
+    这是"按可用项归一化"原则下沉到序列级——算不出来的指数不该投票。"""
+    ok = [s for s in series if s.get("usable") and s.get("score") is not None]
+    skipped = [s["name"] for s in series if not (s.get("usable") and s.get("score") is not None)]
+    if not ok:
+        return None, skipped
+    return round(sum(s["score"] for s in ok) / len(ok), 3), skipped
+
+
 def series_indicators_block(s):
-    """拆出 MA/RSI/MACD 三项子分，用于热力图。"""
+    """拆出 MA/RSI/MACD 三项子分，用于热力图。
+
+    算不出来就返回 None。原先用 0 / 50 / 0 兜底，会让热力图上出现一个
+    "正好落在中轴"的点——那是缺失值伪装成中性，比留空更容易误读。"""
+    if not s.get("usable"):
+        # 整条序列都不可判定（K 线不足 20 根），三个子项一起留空。
+        # 注意 MACD 对单根序列在数学上会返回 0.0（DIF 与 DEA 同起点），
+        # 数值合法但不携带任何信息，所以这里按"不可用"处理。
+        return {"ma": None, "rsi": None, "macd": None}
     n = len(s["close"]) - 1
-    # 仅基于最新快照估算三项分的近似
     c = s["close"][n]; m20 = s["ma20"][n]; m60 = s["ma60"][n]; m200 = s["ma200"][n]
-    if None not in (c, m20, m60, m200):
+    if None in (c, m20, m60, m200):
+        ma_s = None
+    else:
         bull = sum([c > m20, m20 > m60, m60 > m200])
         ma_s = (bull / 3) * 2 - 1
-    else:
-        ma_s = 0
-    r = s["rsi"][n] if s["rsi"][n] is not None else 50
-    rsi_s = clamp((r - 50) / 50)
-    h = s["macdHist"][n] if s["macdHist"][n] is not None else 0
-    macd_s = clamp(h / (0.02 * (c or 1)))
-    return {"ma": round(ma_s, 3), "rsi": round(rsi_s, 3), "macd": round(macd_s, 3)}
+    r = s["rsi"][n]
+    rsi_s = None if r is None else clamp((r - 50) / 50)
+    h = s["macdHist"][n]
+    macd_s = None if h is None else clamp(h / (0.02 * (c or 1)))
+
+    def _r2(x):
+        return None if x is None else round(x, 3)
+    return {"ma": _r2(ma_s), "rsi": _r2(rsi_s), "macd": _r2(macd_s)}
 
 
 def prune_history(hist_dir, keep_days):
@@ -619,30 +655,47 @@ def main():
     dims = {}   # 维度分 -> 用于加权综合
 
     def add_dim(key, label, score, verdict, sub, extra=None):
+        # 统一闸门：分数算不出来就不产出这个维度。
+        # 若放行 None，下游加权会 TypeError；若放行 0.0，会变成"假中性"稀释综合分。
+        if score is None:
+            print(f"  [SKIP] {label} 分数不可计算（数据不足），该维度整体不出")
+            return
         markets[key] = {"label": label, "score": score, "verdict": verdict, "sub": sub}
         if extra:
             markets[key].update(extra)
         dims[key] = score
 
+    def add_heat(group, name, score):
+        """热力图子指标。算不出来的不写入，避免在图上落一个"正好在中轴"的假点。"""
+        if score is not None:
+            heatmap.append([group, name, score])
+
     # ---------- 美股 ----------
     us_series = []
     for sym, nm in (("^GSPC", "标普500"), ("^IXIC", "纳斯达克")):
         raw = fetch_quote(sym, EM_SECID.get(sym))
-        if raw:
-            s = build_series(nm, sym, raw)
-            us_series.append(s)
-            blk = series_indicators_block(s)
-            heatmap.append(["美股", f"{nm}-均线", blk["ma"]])
-            heatmap.append(["美股", f"{nm}-RSI", blk["rsi"]])
-            heatmap.append(["美股", f"{nm}-MACD", blk["macd"]])
+        s = build_series(nm, sym, raw) if raw else None
+        if s is None:
+            print(f"  [SKIP] {nm} 抓取失败或清洗后无有效 K 线")
+            continue
+        us_series.append(s)
+        blk = series_indicators_block(s)
+        add_heat("美股", f"{nm}-均线", blk["ma"])
+        add_heat("美股", f"{nm}-RSI", blk["rsi"])
+        add_heat("美股", f"{nm}-MACD", blk["macd"])
+        if s["usable"]:
             print(f"  [OK] {nm} 最新 {s['latest']} 分 {s['score']} {s['verdict']}")
         else:
-            print(f"  [SKIP] {nm} 抓取失败")
+            print(f"  [WARN] {nm} 仅 {s['bars']} 根 K 线，无法算指标，不参与维度平均")
 
     if us_series:
-        us_score = round(sum(x["score"] for x in us_series) / len(us_series), 3)
-        add_dim("us_stocks", "美股", us_score, verdict_from_score(us_score),
-                f"标普/纳指综合 {round(us_score*100)}", {"series": us_series})
+        us_score, us_skipped = avg_usable(us_series)
+        if us_score is not None:
+            us_sub = f"标普/纳指综合 {round(us_score*100)}"
+            if us_skipped:
+                us_sub += f"（{'、'.join(us_skipped)} 数据不足已排除）"
+            add_dim("us_stocks", "美股", us_score, verdict_from_score(us_score),
+                    us_sub, {"series": us_series, "skipped": us_skipped})
 
     # ---------- 美股恐惧贪婪（情绪维度） ----------
     fng = fetch_fng()
@@ -650,7 +703,7 @@ def main():
         fng_score = clamp((fng["value"] - 50) / 50)
         add_dim("sentiment", "情绪", fng_score, verdict_from_score(fng_score),
                 f"恐贪指数 {fng['value']} · {round(fng_score*100)}", {"fng": fng})
-        heatmap.append(["情绪", "恐惧贪婪指数", round(fng_score, 3)])
+        add_heat("情绪", "恐惧贪婪指数", round(fng_score, 3))
         print(f"  [OK] 情绪 恐贪 {fng['value']} 分 {fng_score}")
 
     # ---------- 美债10Y ----------
@@ -658,7 +711,10 @@ def main():
     us10y = None
     if us10y_raw:
         us10y = build_series("美债10Y", "^TNX", us10y_raw, invert=True)
-        print(f"  [OK] 美债10Y 分 {us10y['score']}")
+        if us10y:
+            print(f"  [OK] 美债10Y 分 {us10y['score']}")
+        else:
+            print("  [WARN] 美债10Y 清洗后无有效 K 线，已跳过")
 
     # ---------- A股（东方财富优先，失败回退 Yahoo；含科技成长指数） ----------
     cn_series = []
@@ -671,20 +727,32 @@ def main():
             raw = fetch_yahoo(yh)   # 多源容错：东财不可达时回退
             if raw:
                 print(f"  [FALLBACK] {nm} 改用 Yahoo {yh}")
-        if raw:
-            s = build_series(nm, secid, raw)
-            cn_series.append(s)
-            blk = series_indicators_block(s)
-            heatmap.append(["A股", f"{nm}-均线", blk["ma"]])
-            heatmap.append(["A股", f"{nm}-RSI", blk["rsi"]])
-            heatmap.append(["A股", f"{nm}-MACD", blk["macd"]])
+        s = build_series(nm, secid, raw) if raw else None
+        if s is None:
+            print(f"  [SKIP] {nm} 抓取失败或清洗后无有效 K 线")
+            continue
+        cn_series.append(s)
+        blk = series_indicators_block(s)
+        add_heat("A股", f"{nm}-均线", blk["ma"])
+        add_heat("A股", f"{nm}-RSI", blk["rsi"])
+        add_heat("A股", f"{nm}-MACD", blk["macd"])
+        if s["usable"]:
             print(f"  [OK] {nm} 最新 {s['latest']} 分 {s['score']} {s['verdict']}")
         else:
-            print(f"  [SKIP] {nm} 抓取失败")
+            print(f"  [WARN] {nm} 仅 {s['bars']} 根 K 线，无法算指标，不参与维度平均")
     if cn_series:
-        cn_score = round(sum(s["score"] for s in cn_series) / len(cn_series), 3)
-        add_dim("cn_stocks", "A股", cn_score, verdict_from_score(cn_score),
-                "上证/沪深300/科创50/创业板指综合", {"series": cn_series})
+        cn_score, cn_skipped = avg_usable(cn_series)
+        if cn_score is None:
+            print("  [SKIP] A股 全部指数 K 线不足 20 根，无法判定，维度整体不出")
+        else:
+            cn_sub = "上证/沪深300/科创50/创业板指综合"
+            if cn_skipped:
+                cn_sub += f"（{'、'.join(cn_skipped)} 数据不足已排除）"
+            add_dim("cn_stocks", "A股", cn_score, verdict_from_score(cn_score),
+                    cn_sub, {"series": cn_series, "skipped": cn_skipped})
+            if cn_skipped:
+                print(f"  [WARN] A股 排除 {len(cn_skipped)} 条数据不足的指数："
+                      f"{'、'.join(cn_skipped)}（仅用剩余序列平均，不再按 0 分计入）")
 
     # ---------- 量能维度（价量配合，跨市场聚合） ----------
     all_vol = [s["volScore"] for s in (us_series + cn_series) if s.get("volScore") is not None]
@@ -693,7 +761,7 @@ def main():
         add_dim("volume", "量能", vol_score, verdict_from_score(vol_score), "量价配合(跨市场)")
         for s in (us_series + cn_series):
             if s.get("volScore") is not None:
-                heatmap.append(["量能", s["name"], round(s["volScore"], 3)])
+                add_heat("量能", s["name"], round(s["volScore"], 3))
         print(f"  [OK] 量能 综合 {vol_score}")
 
     # ---------- 广度维度（跨市场：A股涨跌家数 + 美股等权-市值差） ----------
@@ -726,9 +794,9 @@ def main():
             extra["series"] = [ub["series"]]
         add_dim("breadth", "广度", bs, verdict_from_score(bs), "；".join(sub), extra)
         if br_a is not None:
-            heatmap.append(["广度", "A股涨跌家数", round(br_a, 3)])
+            add_heat("广度", "A股涨跌家数", round(br_a, 3))
         if br_us is not None:
-            heatmap.append(["广度", "美股等权-市值", round(br_us, 3)])
+            add_heat("广度", "美股等权-市值", round(br_us, 3))
         print(f"  [OK] 广度综合 分 {bs}")
     else:
         print("  [SKIP] 广度抓取失败（A股+美股均不可达）")
@@ -740,15 +808,20 @@ def main():
     cn10y_raw = fetch_china_10y_yield()
     if cn10y_raw:
         cn10y = build_series("中债10Y", "CN_10Y", cn10y_raw, invert=True)
-        bond_series.append(cn10y)
-        print(f"  [OK] 中债10Y 分 {cn10y['score']}")
+        if cn10y:
+            bond_series.append(cn10y)
+            print(f"  [OK] 中债10Y 分 {cn10y['score']}")
+        else:
+            print("  [WARN] 中债10Y 清洗后无有效 K 线，已跳过")
     if bond_series:
-        bond_score = round(sum(s["score"] for s in bond_series) / len(bond_series), 3)
+        bond_score, bond_skipped = avg_usable(bond_series)
+        if bond_skipped:
+            print(f"  [WARN] 债券维度排除数据不足序列：{'、'.join(bond_skipped)}")
         add_dim("bonds", "债券", bond_score, verdict_from_score(bond_score),
-                "中美10Y国债(反向)", {"series": bond_series})
-        heatmap.append(["债券", "美债10Y", us10y["score"] if us10y else 0])
+                "中美10Y国债(反向)", {"series": bond_series, "skipped": bond_skipped})
+        add_heat("债券", "美债10Y", us10y["score"] if us10y else None)
         if cn10y_raw:
-            heatmap.append(["债券", "中债10Y", bond_series[-1]["score"]])
+            add_heat("债券", "中债10Y", bond_series[-1]["score"])
 
     # ---------- 波动率维度（VIX 优先；Yahoo 403 时用标普已实现波动率代理） ----------
     vix_raw = fetch_yahoo("^VIX")
@@ -776,7 +849,7 @@ def main():
         add_dim("volatility", "波动率", vs, verdict_from_score(vs),
                 f"{vix_src} {vix_val:.1f} · {regime}",
                 {"vix": {"value": round(vix_val, 2), "regime": regime, "source": vix_src}})
-        heatmap.append(["风险", "VIX波动率", round(vs, 3)])
+        add_heat("风险", "VIX波动率", round(vs, 3))
         print(f"  [OK] 波动率 {vix_src} {vix_val:.1f} 分 {vs} ({regime})")
     else:
         print("  [SKIP] VIX 抓取失败")
@@ -794,13 +867,13 @@ def main():
         if cape:
             cs = cape_score(cape)
             val_parts.append(cs)
-            heatmap.append(["估值", "CAPE", round(cs, 3)])
+            add_heat("估值", "CAPE", round(cs, 3))
             print(f"  [OK] 估值 CAPE {cape:.1f} 分 {cs}")
         if ey and us10y_val:
             erp = ey - us10y_val   # 股权风险溢价 = 盈利收益率 - 10Y国债收益率
             cs = erp_score(erp)
             val_parts.append(cs)
-            heatmap.append(["估值", "股权风险溢价", round(cs, 3)])
+            add_heat("估值", "股权风险溢价", round(cs, 3))
             print(f"  [OK] 估值 ERP {erp:.2f}% 分 {cs}")
     else:
         # 兜底：标普500 价格 / 200日均线 水平代理（价格远高于长期均值=偏贵）
@@ -810,7 +883,7 @@ def main():
             cs = round(clamp(-(ratio - 1) / 0.25), 3)   # 高于均值25%→-1，低于→+1
             val_parts.append(cs)
             val_method = "价格/200MA代理"
-            heatmap.append(["估值", "估值代理", round(cs, 3)])
+            add_heat("估值", "估值代理", round(cs, 3))
             print(f"  [OK] 估值代理 价/200MA={ratio:.2f} 分 {cs}（multpl 不可达）")
         else:
             print("  [SKIP] 估值抓取失败（multpl 不可达且无标普序列）")
@@ -826,14 +899,20 @@ def main():
     ks_raw = fetch_quote("^KS11", EM_SECID.get("^KS11"))
     if ks_raw:
         ks = build_series("韩国KOSPI", "^KS11", ks_raw)
-        blk = series_indicators_block(ks)
-        heatmap.append(["韩股", "KOSPI-均线", blk["ma"]])
-        heatmap.append(["韩股", "KOSPI-RSI", blk["rsi"]])
-        heatmap.append(["韩股", "KOSPI-MACD", blk["macd"]])
-        kr_score = ks["score"]
-        add_dim("kr_stocks", "韩股", kr_score, verdict_from_score(kr_score),
-                f"KOSPI 最新 {ks['latest']}", {"series": [ks]})
-        print(f"  [OK] 韩股 KOSPI 最新 {ks['latest']} 分 {kr_score}")
+        if ks is None:
+            print("  [WARN] KOSPI 清洗后无有效 K 线，已跳过")
+        else:
+            blk = series_indicators_block(ks)
+            add_heat("韩股", "KOSPI-均线", blk["ma"])
+            add_heat("韩股", "KOSPI-RSI", blk["rsi"])
+            add_heat("韩股", "KOSPI-MACD", blk["macd"])
+            kr_score = ks["score"]
+            if kr_score is None:
+                print(f"  [WARN] KOSPI 仅 {ks['bars']} 根 K 线，无法判定，维度不出")
+            else:
+                add_dim("kr_stocks", "韩股", kr_score, verdict_from_score(kr_score),
+                        f"KOSPI 最新 {ks['latest']}", {"series": [ks]})
+                print(f"  [OK] 韩股 KOSPI 最新 {ks['latest']} 分 {kr_score}")
     else:
         print("  [SKIP] KOSPI 抓取失败")
 
@@ -841,14 +920,20 @@ def main():
     gold_raw = fetch_quote("GC=F", EM_SECID.get("GC=F"))
     if gold_raw:
         g = build_series("黄金", "GC=F", gold_raw)
-        blk = series_indicators_block(g)
-        heatmap.append(["黄金", "金价-均线", blk["ma"]])
-        heatmap.append(["黄金", "金价-RSI", blk["rsi"]])
-        heatmap.append(["黄金", "金价-MACD", blk["macd"]])
-        gold_score = g["score"]
-        add_dim("gold", "黄金(避险)", gold_score, verdict_from_score(gold_score),
-                f"COMEX黄金 最新 {g['latest']}（避险/实际利率代理）", {"series": [g]})
-        print(f"  [OK] 黄金 最新 {g['latest']} 分 {gold_score}")
+        if g is None:
+            print("  [WARN] 黄金清洗后无有效 K 线，已跳过")
+        else:
+            blk = series_indicators_block(g)
+            add_heat("黄金", "金价-均线", blk["ma"])
+            add_heat("黄金", "金价-RSI", blk["rsi"])
+            add_heat("黄金", "金价-MACD", blk["macd"])
+            gold_score = g["score"]
+            if gold_score is None:
+                print(f"  [WARN] 黄金仅 {g['bars']} 根 K 线，无法判定，维度不出")
+            else:
+                add_dim("gold", "黄金(避险)", gold_score, verdict_from_score(gold_score),
+                        f"COMEX黄金 最新 {g['latest']}（避险/实际利率代理）", {"series": [g]})
+                print(f"  [OK] 黄金 最新 {g['latest']} 分 {gold_score}")
     else:
         print("  [SKIP] 黄金 抓取失败")
 
@@ -856,22 +941,24 @@ def main():
     jpy_raw = fetch_quote("JPY=X", EM_SECID.get("JPY=X"))
     if jpy_raw:
         cj = [x for x in jpy_raw["close"] if x is not None]
-        fx_series = [build_series("美元兑日元", "JPY=X", jpy_raw)]
+        fx_s = build_series("美元兑日元", "JPY=X", jpy_raw)
+        fx_series = [fx_s] if fx_s else []
+        # 必须满 22 个点才能算「20 日」动量。不足时原先会退到 cj[-1]/cj[0]-1
+        # （2 个点 = 1 天涨跌）或直接给 0（假中性），两者都是把"没算出来"包装成结论。
         if len(cj) >= 22:
             mom = cj[-1] / cj[-21] - 1
-        elif len(cj) >= 2:
-            mom = cj[-1] / cj[0] - 1
+            carry_score = round(clamp(mom / 0.05), 3)
+            regime = ("套息顺畅·risk-on" if mom > 0.01 else
+                      "套息承压·risk-off" if mom < -0.01 else "中性")
+            add_dim("yen_carry", "日元/套息", carry_score, verdict_from_score(carry_score),
+                    f"USD/JPY 20日变动 {mom*100:+.1f}% · {regime}",
+                    {"usdjpy": round(cj[-1], 2), "mom20": round(mom, 4)})
+            add_heat("套息", "日元套息健康度", carry_score)
+            print(f"  [OK] 日元套息 USD/JPY {cj[-1]:.2f} 20日{mom*100:+.1f}% 分 {carry_score} ({regime})")
         else:
-            mom = 0
-        carry_score = round(clamp(mom / 0.05), 3)
-        regime = ("套息顺畅·risk-on" if mom > 0.01 else
-                  "套息承压·risk-off" if mom < -0.01 else "中性")
-        add_dim("yen_carry", "日元/套息", carry_score, verdict_from_score(carry_score),
-                f"USD/JPY 20日变动 {mom*100:+.1f}% · {regime}",
-                {"usdjpy": round(cj[-1], 2), "mom20": round(mom, 4)})
-        heatmap.append(["套息", "日元套息健康度", carry_score])
-        markets.setdefault("fx", {"label": "外汇", "series": fx_series})
-        print(f"  [OK] 日元套息 USD/JPY {cj[-1]:.2f} 20日{mom*100:+.1f}% 分 {carry_score} ({regime})")
+            print(f"  [WARN] USD/JPY 仅 {len(cj)} 个有效点，不足 22 算不出 20 日动量，套息维度不出")
+        if fx_series:
+            markets.setdefault("fx", {"label": "外汇", "series": fx_series})
     else:
         print("  [SKIP] USD/JPY 抓取失败")
 
