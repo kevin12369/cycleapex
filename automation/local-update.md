@@ -13,10 +13,10 @@
 | 工作目录 | `D:\Coder\CycleApex` |
 | 解释器 | `C:/Users/Kevin/.workbuddy/binaries/python/envs/default/Scripts/python.exe`（受管 venv） |
 
-## 任务 prompt（原文摘要，密钥以环境变量名引用，不含明文）
+## 任务 prompt（原文摘要，不含任何密钥）
 
 1. 用受管 Python 运行 `scripts/fetch_data.py`，产出 `data/market.json`，并由脚本自身归档 `data/history/YYYY-MM-DD.json`、写入 `data/status.json`。
-2. 密钥（`FRED_KEY`、`TUSHARE_TOKEN`）从本地 `.env`（已被 gitignore）或本机环境变量读取，**不打印到日志、不提交仓库**。
+2. **不读取任何密钥**——全部数据源免密钥（Yahoo / 东方财富 / feargreedchart / multpl）。脚本里已无 `.env` 加载逻辑，`FRED_KEY`、`TUSHARE_TOKEN` 两个变量已删除。
 3. 失败处理：
    - 脚本在「可用维度 < 2」时以非零退出码结束，且**不覆盖**旧 `market.json`；
    - 若退出码非 0 或 `status.json` 的 `status != "ok"`，则保留上一次成功的 `market.json` 并告警；
@@ -40,11 +40,11 @@
 
 1. **看提交者**：`git log -3 --format='%an %s' -- data/market.json`。
 2. **看时间点**：比对 `data/market.json` 的 `generated_at` 与 `gh run list --workflow=update.yml` 的 run 时间。若秒级吻合（如 run `00:16:55Z` vs `generated_at 00:17:18Z`），说明这份数据是云端产出的。
-3. **看维度**：`data/status.json` 的 `dims_available`。**常态是 11/13**——本地任务读得到 `.env` 里的 `FRED_KEY` 时会是 13/13；云端没配 secret 时是 11/13（缺信用、宏观）。这也是判断"哪条链路产出的"最直接的信号。
+3. **看维度**：`data/status.json` 的 `dims_available`。**常态是 11/11**（维度总数已由十三收缩为十一，信用与宏观两维随 FRED 依赖一并移除）。若看到 11/13 或小于 11/11，说明是旧版脚本产出的数据或当天有源不可达——**这个字段现在只反映"数据是否完整"，不再能区分是云端还是本地产出的**，区分链路请看第 1、2 条。
 
 ## 失败判定的已知缺口
 
-`fetch_data.py` 只有在「可用维度 < 2」时才非零退出。历史上出现过退出码 0、`status.json` 写 `ok`，但实际只有 **3/13** 维可用的情况（2026-07-15：Yahoo 全线 403 + 东方财富中断）。
+`fetch_data.py` 只有在「可用维度 < 2」时才非零退出。历史上出现过退出码 0、`status.json` 写 `ok`，但实际只有 **3/13** 维可用的情况（2026-07-15：Yahoo 全线 403 + 东方财富中断）——注意 13 是当时的维度总数，现行总数为 11。
 
 → **`status: ok` 只说明脚本没崩，不等于数据完整。** 判断当天数据能不能用，看 `dims_available`。
 
@@ -56,4 +56,4 @@
 
 ## 如何重建这个任务
 
-平台侧新建一个定时任务，工作目录设为项目根，prompt 按上文字段填写，调度设为工作日 09:00。密钥只需放在项目根的 `.env`（参照 `.env.example`），不要写进 prompt。
+平台侧新建一个定时任务，工作目录设为项目根，prompt 按上文字段填写，调度设为工作日 09:00。**项目不需要任何密钥**，无需创建 `.env`，也无需配置 Actions Secret。
