@@ -44,15 +44,17 @@ from fetch_data import (  # noqa: E402
 )
 
 # 维度 → 底层的日线序列。
-# yahoo / em 两种来源都写上，任一可达即可；em 需要 (secid, yahoo_symbol) 两个键。
+# "em" 形态是 ("em", 东财 secid, Yahoo symbol)，顺序不能反：
+# 首次跑批把韩股/黄金/套息写成了 ("em", yahoo代码, 东财代码)，结果东财拿着
+# "^KS11" 报错、回退时又把 "100.KS11" 当 Yahoo 代码请求，两条腿一起死。
 DIM_SPECS = {
     "us_stocks": [("yahoo", "^GSPC"), ("yahoo", "^IXIC")],
     "cn_stocks": [("em", "1.000001", "000001.SS"), ("em", "1.000300", "000300.SS"),
                   ("em", "1.000688", "000688.SS"), ("em", "0.399006", "399006.SZ")],
-    "kr_stocks": [("em", "^KS11", "100.KS11")],
-    "gold": [("em", "GC=F", "101.GC00Y")],
+    "kr_stocks": [("em", "100.KS11", "^KS11")],
+    "gold": [("em", "101.GC00Y", "GC=F")],
     "bonds": [("yahoo", "^TNX")],
-    "yen_carry": [("em", "JPY=X", "133.USDJPY")],
+    "yen_carry": [("em", "133.USDJPY", "JPY=X")],
 }
 DIM_LABEL = {"us_stocks": "美股", "cn_stocks": "A股", "kr_stocks": "韩股",
              "bonds": "债券", "gold": "黄金", "yen_carry": "日元套息"}
@@ -118,14 +120,20 @@ def yen_dim_scores(s):
 
 
 def build_dim_series(years):
-    """返回 {维度: {日期: 分}}，以及每个维度实际拿到的底层序列数。"""
-    dims, used = {}, {}
+    """返回 ({维度: {日期: 分}}, {维度: 底层序列数}, {Yahoo代码: series})。
+
+    第三个返回值是缓存：评估标的（沪深300 / 标普500）用的正是这里已经拉过的序列，
+    再请求一次毫无意义，还会因为东财抖动而拿到不一致的结果。
+    首跑就是栽在这上面：沪深300 的 dim 已成功拉到 5299 根，到了评估环节
+    重新请求时东财断连、Yahoo 也没给数据，整个 A股 标的直接跳过。"""
+    dims, used, cache = {}, {}, {}
     for key, specs in DIM_SPECS.items():
         per_sub = []
         for spec in specs:
             s = load(spec, years)
             if not s:
                 continue
+            cache[spec[-1]] = s          # spec[-1] 恒为 Yahoo 代码
             if key == "bonds":
                 per_sub.append(bond_dim_scores(s))
             elif key == "yen_carry":
@@ -143,7 +151,7 @@ def build_dim_series(years):
                 merged[d] = round(sum(vals) / len(vals), 3)
         dims[key] = merged
         used[key] = len(per_sub)
-    return dims, used
+    return dims, used, cache
 
 
 def composite_series(dims):
@@ -273,7 +281,7 @@ def main():
 
     print(f"== 阈值标定：{args.years} 年历史，前瞻 {args.horizon} 个交易日 ==\n")
     print("-- 抓取底层序列 --")
-    dims, used = build_dim_series(args.years)
+    dims, used, cache = build_dim_series(args.years)
     print(f"\n-- 可用维度 {len(dims)}/{len(WEIGHTS)}：{'、'.join(DIM_LABEL.get(k, k) for k in dims)} --")
 
     comp = composite_series(dims)
@@ -296,16 +304,18 @@ def main():
     for label, secid, yh in (("沪深300", "1.000300", "000300.SS"),
                              ("标普500", None, "^GSPC")):
         print(f"\n-- 评估标的：{label} --")
-        if secid:
-            raw = fetch_eastmoney_kline(secid, beg="20050101", lmt=100000)
+        # 优先复用手上已有的序列，避免重复请求（也避免两次抓取拿到不同结果）
+        t = cache.get(yh)
+        if t is None:
+            raw = None
+            if secid:
+                raw = fetch_eastmoney_kline(secid, beg="20050101", lmt=100000)
             if not bars_ok(raw):
                 raw = fetch_yahoo(yh, rng=f"{args.years}y")
-        else:
-            raw = fetch_yahoo(yh, rng=f"{args.years}y")
-        if not bars_ok(raw):
-            print(f"  [SKIP] {label} 取不到历史")
-            continue
-        t = build_series(label, secid or yh, raw)
+            if not bars_ok(raw):
+                print(f"  [SKIP] {label} 取不到历史（东财与 Yahoo 均不可用）")
+                continue
+            t = build_series(label, secid or yh, raw)
         res = analyse(comp, t, args.horizon)
         out["targets"][label] = res
         if "error" in res:
