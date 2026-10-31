@@ -585,13 +585,51 @@
     });
   }
 
+  // 顶部元信息：数据时点（UTC + 北京时间）与维度覆盖度。
+  // 维度分母取 professional.weights（算法设计的 13 维），分子取实际可用维度；
+  // 两者不一致时说明部分维度因未配置密钥/源不可达被剔除并按可用维度归一化。
+  function renderMeta(d) {
+    const el = document.getElementById("updated");
+    const raw = d.generated_at || "";
+    let txt = raw || "—";
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/.exec(raw);
+    if (m) {
+      const p = (n) => String(n).padStart(2, "0");
+      const utc = new Date(raw);
+      if (!isNaN(utc.getTime())) {
+        const bj = new Date(utc.getTime() + 8 * 3600 * 1000);
+        txt = `${bj.getUTCFullYear()}-${p(bj.getUTCMonth() + 1)}-${p(bj.getUTCDate())} `
+            + `${p(bj.getUTCHours())}:${p(bj.getUTCMinutes())} 北京时间`
+            + `（UTC ${m[4]}:${m[5]}）`;
+      }
+    }
+    if (el) el.textContent = txt;
+
+    const dimsEl = document.getElementById("dimsInfo");
+    if (!dimsEl) return;
+    const pro = d.professional || {};
+    const avail = Object.keys(pro.dimensions || {}).length;
+    const total = Object.keys(pro.weights || pro.present_weights || {}).length;
+    if (!avail) {
+      dimsEl.textContent = "—";
+      return;
+    }
+    dimsEl.textContent = total ? `${avail} / ${total}` : String(avail);
+    if (total && avail < total) {
+      dimsEl.title = `设计 ${total} 维，本次实际可用 ${avail} 维；`
+        + `缺失维度（多为未配置 FRED_KEY 的信用/宏观）已从加权中剔除，并按可用维度重新归一化。`;
+    } else {
+      dimsEl.removeAttribute("title");
+    }
+  }
+
   // ---------------- 启动 ----------------
   const isFileProtocol = location.protocol === "file:";
   fetch("./data/market.json", { cache: "no-store" })
     .then((r) => r.json())
     .then((d) => {
       DATA = d;
-      document.getElementById("updated").textContent = d.generated_at || "—";
+      renderMeta(d);
       ALL_SERIES = collectSeries();
       if (!ALL_SERIES.length) {
         document.getElementById("gauges").innerHTML =
