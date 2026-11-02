@@ -692,8 +692,11 @@ def market_freshness(markets, today_utc=None):
     if skew > 1:
         behind = sorted(parsed.items(), key=lambda x: x[1])[:1]
         bk, bv = behind[0]
-        note += f"；各市场数据不同步（最大相差 {skew} 天，最早为{names.get(bk, bk)} {bv}）"
-        note_short += f" · {names.get(bk, bk)} {bv[5:]}"
+        # parsed 里的值是 datetime.date，不是 str —— 直接切片会 TypeError。
+        # （第一版就是这么挂的：runner 上跑批 22 秒后 exception，什么都没写出来。）
+        bv_s = bv.isoformat() if hasattr(bv, "isoformat") else str(bv)
+        note += f"；各市场数据不同步（最大相差 {skew} 天，最早为{names.get(bk, bk)} {bv_s}）"
+        note_short += f" · {names.get(bk, bk)} {bv_s[5:]}"
 
     return {
         "as_of": latest.isoformat(),
