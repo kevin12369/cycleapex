@@ -27,8 +27,9 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Assemble site (排除 history/scripts/.github，避免发布 88MB 快照)
+      - name: Assemble site (排除 history/scripts/.github，避免发布快照)
         run: |
+          set -euo pipefail
           mkdir -p dist/assets/vendor dist/data
           cp index.html dist/
           [ -f report.html ] && cp report.html dist/ || true
@@ -36,15 +37,32 @@ jobs:
           # ECharts 已本地化，必须一起发布，否则图表区全空
           cp assets/vendor/echarts.min.js dist/assets/vendor/
           [ -f .nojekyll ] && cp .nojekyll dist/ || true
-          # 前端实际只 fetch 这两个数据文件（见 assets/app.js 的 fetch 调用）
-          cp data/market.json dist/data/
-          cp data/paradigm.json dist/data/
-          # K 线序列单独一份（约 700KB），前端首帧之后才拉；漏了它图就空着
-          [ -f data/series.json ] && cp data/series.json dist/data/ || true
-          # status.json 不是给前端用的，是给外部监控/告警读的（dims_available、
-          # data_as_of、write_skipped）。之前漏了这一行，线上一直 404。
-          [ -f data/status.json ] && cp data/status.json dist/data/ || true
+
+          # 数据文件走清单循环，而不是一条条 cp。
+          # 教训：status.json 曾被漏在装配清单外，线上一直 404 —— 它不参与页面渲染，
+          # 却是外部监控读 dims_available / data_as_of / write_skipped 的唯一入口，
+          # 漏发布等于告警通道整个废掉，而且部署 job 照样是绿的。
+          DATA_FILES="market.json paradigm.json series.json status.json dim_history.json"
+          for f in $DATA_FILES; do
+            if [ -f "data/$f" ]; then
+              cp "data/$f" "dist/data/$f"
+            else
+              echo "::warning::data/$f 不存在，未发布"
+            fi
+          done
+
+          # 硬断言：market.json 是页面的唯一数据源，缺了宁可不发（宁可线上留在旧版，
+          # 也不要发一个白屏的站）。paradigm.json 同理，它撑起 Pérez 整块内容。
+          for f in market.json paradigm.json; do
+            test -f "dist/data/$f" || { echo "::error::dist/data/$f 缺失，中止发布"; exit 1; }
+          done
+          # 软断言：这两个缺失不致命（K线空着 / 折线降级），但必须留下痕迹。
+          for f in series.json status.json dim_history.json; do
+            test -f "dist/data/$f" || echo "::warning::dist/data/$f 缺失，相关模块将降级"
+          done
+
           echo "=== 发布产物清单 ===" && find dist -type f | sort
+          echo "=== data/ 明细 ===" && ls -l dist/data/
           echo "=== 总体积 ===" && du -sh dist
 
       - name: Upload static site

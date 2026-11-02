@@ -22,3 +22,6 @@ data/etf_backtest_index.json
 _*.png
 _*.js
 _*.txt
+
+# GitHub Pages 装配产物（本地验证 pages.yml 的拷贝清单时会生成）
+dist/

@@ -37,19 +37,23 @@
 │   └── style.css
 ├── scripts/
 │   ├── fetch_data.py       # 数据抓取 + 牛熊判定（七维度加权 + 共识票数，GitHub Actions / 本地自动化调用）
+│   ├── backfill_dim_history.py  # 从 data/history/ 重建 data/dim_history.json（首次回填 + 灾备重建）
 │   ├── calibrate.py        # 十年逐日重建综合分 + 十分位标定（产出 data/calibration.json）
 │   ├── backtest.py         # 回测一致性校验（滚动判定 + 前瞻收益/命中率/相关性）
 │   ├── test_freshness_guard.py  # 休市容错 / 同日重跑护栏的单测（15 例）
 │   └── dev_shot.js         # 开发用：CDP 驱动无头浏览器截图并收集控制台错误
 ├── data/
-│   ├── market.json         # 首屏数据（约 5 KB，不含 K 线序列；请勿手动编辑）
+│   ├── market.json         # 首屏数据（约 7 KB，不含 K 线序列；请勿手动编辑）
 │   ├── series.json         # K 线/指标序列（约 700 KB，首屏渲染后懒加载；请勿手动编辑）
+│   ├── dim_history.json    # 维度分的历史窄表（约 2 KB/年积累，服务维度卡折线；派生文件，可重建）
 │   ├── calibration.json    # 十年分位标定结果（标普500 / 沪深300 的十分位切点与前瞻收益）
 │   ├── paradigm.json       # 技术-经济范式周期（Pérez 框架，低频人工复核）
-│   ├── status.json         # 运行状态（可用维度数/状态，供自动化告警读取）
+│   ├── status.json         # 运行状态（可用维度数/折线行数/告警标志，供自动化告警读取）
 │   ├── history/            # 历史快照归档（YYYY-MM-DD.json，供回看/回测基线/失败回滚）
 │   ├── backtest.json       # 回测结果（单窗口，运行 backtest.py 后生成）
 │   └── backtest_oos.json   # 多窗口分段回测结果（运行 backtest.py --multi 后生成；窗口间有重叠）
+├── docs/
+│   └── plan-v3-dim-lines.md  # v3 规划（维度折线化 + 灾备 + 休假容错），不参与 Pages 发布
 ├── assets/vendor/
 │   └── echarts.min.js      # ECharts 5.5.0 本地副本（CDN 不可达时不再整页图表全空）
 ├── .github/workflows/
@@ -89,7 +93,9 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
 
 > **一个容易踩的坑（已修复，2026-10-31 实测）**：用 `GITHUB_TOKEN` 推送的提交**不会**触发其他 workflow（GitHub 的防递归机制）。所以 `update.yml` 提交完数据后，`pages.yml` 的 `on.push` 根本收不到这次提交，**线上会一直停留在上一次部署时的旧数据上**——而 Actions 里两个 run 都显示 success，很难察觉。现在 `update.yml` 末尾显式多跑一步 `gh workflow run pages.yml`（需要 `actions: write` 权限），由它把新数据推上线。
 
-**`pages.yml` 发布的是装配出来的 `dist/`，不是仓库根目录**：只拷贝 `index.html`、`report.html`、`assets/app.js`、`assets/style.css`、`assets/vendor/echarts.min.js`、`data/market.json`、`data/series.json`、`data/status.json`、`data/paradigm.json` 与 `.nojekyll`。因此 `data/history/`（80 余份快照）、`scripts/`、`data/calibration.json`、`.github/` 都不会上线——线上访问 `data/history/*.json` 返回 404 属**预期行为**，发布体积从 116MB 降到约 2MB。新增前端文件时，请同步更新 `pages.yml` 的拷贝清单。
+**`pages.yml` 发布的是装配出来的 `dist/`，不是仓库根目录**：只拷贝 `index.html`、`report.html`、`assets/app.js`、`assets/style.css`、`assets/vendor/echarts.min.js` 与 `data/` 下的 5 个文件（`market.json`、`series.json`、`status.json`、`paradigm.json`、`dim_history.json`），外加 `.nojekyll`。因此 `data/history/`（80 余份快照）、`scripts/`、`data/calibration.json`、`docs/`、`.github/` 都不会上线——线上访问 `data/history/*.json` 返回 404 属**预期行为**，发布体积从 116MB 降到约 2MB。新增前端文件时，请同步更新 `pages.yml` 的 `DATA_FILES` 清单。
+
+> 数据文件现在走**清单循环 + 产物断言**，而不是一条条 `cp`。`market.json` / `paradigm.json` 缺失会让装配步骤直接 fail（宁可线上留在旧版，也不发一个白屏的站）；`series.json` / `status.json` / `dim_history.json` 缺失只记 `::warning::`（对应模块降级）。起因是 `status.json` 曾被漏在清单外，线上 404 了很久而部署 job 一直是绿的。
 
 > `data/status.json` 曾长期线上 404：装配清单漏了它，自动化读不到状态却毫无报错。已补进 `pages.yml`。`data/calibration.json` 则**故意不上线**——它只在服务端生成 `market.json` 时被读取，前端拿到的是已经算好的 `reference` 块。
 
@@ -184,6 +190,22 @@ python -m http.server 8000            # 预览（必须用 http 服务，不能�
   - ⚠️ 拆分前产生的快照（2026-10-31 及更早）仍带完整 series，单份 1~2 MB；拆分后的新快照不含 series。混用两代快照做回测时注意字段差异。
 - **失败保护**：当"可用维度 < 2"时（疑似全源失效），脚本以非零退出码结束且**不覆盖**上一次 `market.json`；同时写入 `data/status.json`（`status: ok / 维度计数`）。
 - **自动化告警**：WorkBuddy 自动化任务读取 `status.json`，若 `status != "ok"` 或进程退出码非 0，则保留上一快照并向用户告警，不会"开天窗"或写入空数据。
+
+## 维度历史窄表 `data/dim_history.json`
+
+v3 计划（`docs/plan-v3-dim-lines.md`）的 P0 产物：把每天 7 个维度的分数抽成一张窄表，供维度卡折线使用。**当前前端尚未读取它**——先攒数据，再改 UI。
+
+- **它是派生文件**：真正的源是 `data/history/YYYY-MM-DD.json`。丢失、损坏、schema 升级，跑一条命令即可重建：
+  ```bash
+  python scripts/backfill_dim_history.py            # 增量并入
+  python scripts/backfill_dim_history.py --reset    # 丢现有文件，从快照全量重建
+  python scripts/backfill_dim_history.py --dry-run  # 只看结果不落盘
+  ```
+- **格式**：列顺序由 `dims` 数组定义，每行 `[日期, 7 个分数...]`，缺失写 `null`（不是 0——0 是"中性"，会让折线在缺数据的日子沉到零轴）。
+- **主键是 `data_freshness.as_of`（数据截止日），不是跑批日期**。周末跑批拿到的仍是周五的数据，必须**覆盖**周五那一行；用跑批日期会让同一根 K 线在折线上变成好几个点。同日多份快照**后者胜出**。
+- **口径断点不靠手工维护**：`CALIBER_CHANGES` 里记切换边界，`dim_breaks()` 从行数据反推第一条口径变化的行，写进 `breaks`。目前只有一处——债券在 2026-10-30 由「收益率水平方向」改为「20 日变化量」，同一组 K 线从 −0.050 跳到 +1.000。**折线必须在此断开**，否则会被读成"债券突然极度看多"。
+- **写入与 `market.json` 同生共死**：本次跑批被同日覆盖度护栏拒绝时，`dim_history` 也不写，否则会出现"页面上没有、折线上有"的分裂。
+- 保留最近 **250 行**（`DIM_HIST_MAX_ROWS` 可覆盖）≈ 一年交易日，当前约 1.6 KB。
 
 ## 数据更新频率与失败表现
 

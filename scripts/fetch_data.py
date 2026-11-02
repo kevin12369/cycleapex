@@ -44,6 +44,12 @@ OUT_FILE = os.path.join(OUT_DIR, "market.json")
 # K 线序列单独成文件。实测原 market.json 1.85MB，其中 99% 是 series：
 # 仪表盘、分条图、表格只需要 5KB 的分数与 heatmap，却要等整包下载解析完才能显示。
 SERIES_FILE = os.path.join(OUT_DIR, "series.json")
+# 维度分的历史窄表，只服务「维度卡折线」。详见 docs/plan-v3-dim-lines.md §3。
+# 它是**派生文件**：真正的源是 data/history/YYYY-MM-DD.json，丢了可以用
+# scripts/backfill_dim_history.py 一条命令重建（RPO ≈ 0）。
+# 单独成文件而不是塞进 market.json：market.json 是首屏第一优先级的文件，
+# 不能因为一张折线变得越跑越重。
+DIM_HIST_FILE = os.path.join(OUT_DIR, "dim_history.json")
 
 # 历史快照保留天数：超过则删除（0 或负数表示不做清理）。
 # 2026-10-31 起快照已剥离 K 线序列（原 1.2MB/份 → 约 5KB/份），
@@ -99,6 +105,172 @@ MIN_BARS_OK = 20
 # 剩余 7 项按原相对比例等比放大到 1.00，彼此话语权不变。
 WEIGHTS = {"us_stocks": 0.24, "cn_stocks": 0.20, "kr_stocks": 0.10,
            "bonds": 0.14, "gold": 0.08, "sentiment": 0.16, "yen_carry": 0.08}
+
+# ----------------------------------------------------------------------------
+# 维度历史（折线图数据源）
+# ----------------------------------------------------------------------------
+# 列顺序写死在这里：dim_history.json 的每一行只有数字，靠这个数组解释第几列是
+# 哪个维度。**改动顺序等于改变所有历史行的语义**，所以 write_dim_history 会比对
+# 文件里记录的 dims，不一致就整份重建（并备份旧文件），绝不硬套。
+DIM_HIST_DIMS = list(WEIGHTS.keys())
+DIM_HIST_SCHEMA = 2
+DIM_HIST_MAX_ROWS = _env_int("DIM_HIST_MAX_ROWS", 250)
+
+# 计分口径版本。某个维度换了公式就在这里加一条切换日期 —— 折线必须在断点处
+# 断开，不能把两种口径的点连成一条趋势线。
+#   债券：2026-10-31 的代码版本改为「20 日收益率变化量」（下行 25bp ⇒ +1），
+#         之前测的是「收益率水平方向」（长端长期偏高 ⇒ 恒为负）。
+#         实测同一组 K 线从 −0.050 跳到 +1.000，不标断点会被读成"债券突然极度看多"。
+#         切换日写 10-30 而不是代码上线日 10-31：10-31 是周六，那次跑批拿到的仍是
+#         10-30 的数据、却已用新公式重算，因此**第一条新口径记录落在 10-30**。
+#         断点由 dim_breaks() 反推（第一条口径变化的行），这里只描述切换边界。
+CALIBER_CHANGES = {
+    "bonds": [("2026-10-30", 2)],
+}
+CALIBER_NOTES = {
+    ("bonds", 2): "债券口径由「收益率水平方向」改为「20 日收益率变化量」",
+}
+
+
+def dim_caliber(key, date_s):
+    """某维度在某个日期适用的口径版本。没有切换记录的一律为 1。"""
+    changes = CALIBER_CHANGES.get(key)
+    if not changes:
+        return 1
+    ver = 1
+    for cut, new_ver in changes:      # 已按日期升序
+        if str(date_s) >= cut:
+            ver = new_ver
+    return ver
+
+
+def dim_row(payload, as_of):
+    """从一份 payload 抽出「一行」维度历史：[日期, 7 个分数...]。
+
+    as_of 缺失时返回 None —— 宁可少写一行，也不要写一行没有日期锚点的数据，
+    否则折线的 X 轴会凭空多出一个点（这正是 get 系列里最难查的一类 bug）。
+    """
+    if not as_of:
+        return None
+    mk = payload.get("markets") or {}
+    row = [str(as_of)]
+    for k in DIM_HIST_DIMS:
+        s = (mk.get(k) or {}).get("score")
+        # 缺失写 null，不写 0：0 是"中性"，会让折线在缺数据的日子沉到零轴，
+        # 看起来像"这天市场转中性了"。前端遇到 null 断线。
+        row.append(None if s is None else round(float(s), 3))
+    return row
+
+
+def dim_breaks(rows):
+    """从行数据反推口径断点表（纯派生，不单独存储状态，因此不会漂移）。
+
+    返回 [[日期, 维度, 说明], ...]，前端据此在该日期画竖虚线并断开折线。
+    """
+    out, prev = [], {}
+    for row in rows:
+        d = row[0]
+        for i, k in enumerate(DIM_HIST_DIMS):
+            if i + 1 >= len(row):
+                continue
+            ver = dim_caliber(k, d)
+            if k in prev and prev[k] != ver:
+                out.append([d, k,
+                            CALIBER_NOTES.get((k, ver), f"{k} 口径版本 {prev[k]} → {ver}")])
+            prev[k] = ver
+    return out
+
+
+def read_dim_history(path=None):
+    """读 dim_history.json；不存在或损坏时返回一个空的骨架，不抛异常。
+
+    损坏的文件不删除、不就地覆盖 —— 先备份成 .bak 再由下次写入重建，
+    因为"文件坏了"本身是信息，删掉就查不出为什么会坏。
+    """
+    path = path or DIM_HIST_FILE
+    blank = {"schema": DIM_HIST_SCHEMA, "generated_at": None, "as_of": None,
+             "dims": list(DIM_HIST_DIMS), "calibers": {}, "breaks": [], "rows": []}
+    if not os.path.exists(path):
+        return blank
+    try:
+        # 必须用 with：直接 json.load(open(...)) 在解析失败时，异常 traceback 会
+        # 一直握住文件句柄，后面的 os.replace 在 Windows 上会 PermissionError。
+        # 这个坑只在"文件坏了"的分支里出现，平时测不出来。
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except Exception as e:  # noqa
+        print(f"  [WARN] {os.path.basename(path)} 解析失败（{e}），本次按空表重建")
+        try:
+            os.replace(path, path + ".bak")
+            print(f"  [WARN] 损坏文件已备份为 {os.path.basename(path)}.bak")
+        except OSError as e2:
+            print(f"  [WARN] 损坏文件备份失败（{e2}），下次写入将直接覆盖它")
+        return blank
+    if not isinstance(doc, dict):
+        return blank
+    rows = [r for r in (doc.get("rows") or [])
+            if isinstance(r, list) and r and isinstance(r[0], str)]
+    doc["rows"] = rows
+    return doc
+
+
+def write_dim_history(payload, as_of, path=None):
+    """把当次维度分并入 dim_history.json，返回 {rows, added, path}。
+
+    三条规则（见 docs/plan-v3-dim-lines.md §3.3）：
+      1. 主键是 **as_of（数据截止日）**，不是跑批日期 —— 周末跑批拿到的还是周五
+         的数据，必须覆盖周五那一行，否则折线会凭空多出周六、周日两个点。
+      2. 幂等：读旧表 → 按 as_of upsert → 排序 → 截断 → 写回，跑几次结果都一样。
+      3. 结构漂移保护：文件里记录的 dims 顺序与当前代码不一致时整份重建，
+         绝不把新顺序套到旧行上（那会让第 4 列的历史语义从"债券"变成别的）。
+    """
+    row = dim_row(payload, as_of)
+    if row is None:
+        print("  [WARN] 无数据截止日，跳过 dim_history 写入")
+        return None
+
+    path = path or DIM_HIST_FILE
+    doc = read_dim_history(path)
+    if doc.get("dims") != DIM_HIST_DIMS:
+        old_n = len(doc.get("rows") or [])
+        if old_n:
+            print(f"  [WARN] dim_history 维度顺序与当前不一致"
+                  f"（旧 {doc.get('dims')}），整份重建，丢弃 {old_n} 行")
+        doc = {"schema": DIM_HIST_SCHEMA, "generated_at": None, "as_of": None,
+               "dims": list(DIM_HIST_DIMS), "calibers": {}, "breaks": [], "rows": []}
+    if doc.get("schema") != DIM_HIST_SCHEMA:
+        print(f"  [WARN] dim_history schema {doc.get('schema')} → {DIM_HIST_SCHEMA}，保留行、升级版本")
+
+    rows = doc.get("rows") or []
+    # 列数对齐：旧行若少列（更早的维度集合）补 None，多列则截断。
+    width = len(DIM_HIST_DIMS) + 1
+    rows = [(r + [None] * width)[:width] for r in rows]
+
+    idx = next((i for i, r in enumerate(rows) if r[0] == row[0]), None)
+    added = idx is None
+    if added:
+        rows.append(row)
+    else:
+        rows[idx] = row
+    rows.sort(key=lambda r: r[0])
+    if DIM_HIST_MAX_ROWS > 0 and len(rows) > DIM_HIST_MAX_ROWS:
+        rows = rows[-DIM_HIST_MAX_ROWS:]
+
+    doc = {
+        "schema": DIM_HIST_SCHEMA,
+        "generated_at": payload.get("generated_at"),
+        # 整表的截止日取**最后一行的日期**，不是本次跑的 as_of：数据若倒退
+        # （上游回滚），这里的 as_of 必须如实反映表里最新的那一行。
+        "as_of": rows[-1][0] if rows else None,
+        "dims": list(DIM_HIST_DIMS),
+        "calibers": {k: dim_caliber(k, rows[-1][0] if rows else as_of)
+                     for k in DIM_HIST_DIMS},
+        "breaks": dim_breaks(rows),
+        "rows": rows,
+    }
+    write_json_compact(path, doc)
+    return {"rows": len(rows), "added": added, "path": path}
+
 
 
 def bars_ok(raw):
@@ -1426,6 +1598,25 @@ def main():
     except Exception as e:  # noqa
         print(f"  [WARN] 快照归档失败（不影响主输出）: {e}")
 
+    # ---------- 维度历史窄表（维度卡折线的数据源） ----------
+    # 必须与「页面真正发布的那份」保持一致：本次结果被护栏拒绝时，页面显示的是
+    # 上一份，折线也不许记下这次的点 —— 否则会出现"页面上没有、折线上有"的分裂，
+    # 而且这种分裂只在下次回看时才被发现，极难归因。
+    dim_rows_n = None
+    try:
+        if keep_prev:
+            dim_rows_n = len(read_dim_history().get("rows") or [])
+            print(f"== 本次结果已被拒绝，dim_history 不写入（保持 {dim_rows_n} 行） ==")
+        else:
+            r = write_dim_history(payload, freshness.get("as_of"))
+            if r:
+                dim_rows_n = r["rows"]
+                print(f"== dim_history {r['rows']} 行"
+                      f"（{'新增一行' if r['added'] else '覆盖同日'}，"
+                      f"{os.path.getsize(r['path'])/1024:.1f} KB）==")
+    except Exception as e:  # noqa
+        print(f"  [WARN] dim_history 写入失败（不影响主输出）: {e}")
+
     # ---------- 状态文件（供自动化告警读取） ----------
     try:
         # 必须以「实际发布出去的那份」为准。keep_prev 时本次 payload 已被拒绝，
@@ -1450,6 +1641,9 @@ def main():
             "freshness_lag_days": published["data_freshness"]["lag_days"],
             "dims_available": p_dims,
             "dims_total": len(WEIGHTS),
+            # 折线数据攒到几行了。外部监控靠它判断「维度卡折线是不是有数据可画」：
+            # 这个数字在跑批成功时应当每个交易日 +1，停涨就说明跑批或写入出问题。
+            "dim_rows": dim_rows_n,
             # 本次跑批结果因覆盖度更低被拒绝，页面沿用上一份。告警看到这个 true
             # 就该知道「数据源这次抖了」，而不是以为一切正常。
             "write_skipped": keep_prev,
