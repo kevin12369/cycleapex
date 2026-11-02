@@ -1,20 +1,20 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-02T01:02:53Z",
+  "generated_at": "2026-11-02T02:12:02Z",
   "overall": {
-    "score": -0.077,
+    "score": -0.079,
     "verdict": "neutral",
-    "score_ex_sentiment": -0.046
+    "score_ex_sentiment": -0.048
   },
   "consensus": {
     "bull": 1,
-    "bear": 4,
-    "neutral": 2,
+    "bear": 3,
+    "neutral": 3,
     "total": 7,
-    "net": -3,
+    "net": -2,
     "need": 3,
-    "ratio": -0.429,
-    "verdict": "bear"
+    "ratio": -0.286,
+    "verdict": "neutral"
   },
   "data_as_of": "2026-11-02",
   "freshness_status": "live",
