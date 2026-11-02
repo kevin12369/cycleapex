@@ -677,10 +677,23 @@ def market_freshness(markets, today_utc=None):
         status = "market_closed"
         note = f"当前处于假期休市（已缺 {missing_td} 个交易日），数据为最近交易日收盘"
 
+    # 首屏只放一行的短句。note 那句完整的说明有 40+ 字，在 Hero 里要折三行，
+    # 直接把整个仪表盘区挤出首屏——信息再多，看不到也等于没有。
+    # 完整 note 仍保留，前端挂在 title 上、status.json 里也有。
+    if status == "stale":
+        note_short = f"数据已停更 {missing_td} 个交易日"
+    elif is_weekend:
+        note_short = "周末休市"
+    elif status == "live":
+        note_short = "最近交易日收盘"
+    else:
+        note_short = f"假期休市（缺 {missing_td} 日）"
+
     if skew > 1:
         behind = sorted(parsed.items(), key=lambda x: x[1])[:1]
         bk, bv = behind[0]
         note += f"；各市场数据不同步（最大相差 {skew} 天，最早为{names.get(bk, bk)} {bv}）"
+        note_short += f" · {names.get(bk, bk)} {bv[5:]}"
 
     return {
         "as_of": latest.isoformat(),
@@ -688,6 +701,7 @@ def market_freshness(markets, today_utc=None):
         "missing_trading_days": missing_td,
         "status": status,
         "note": note,
+        "note_short": note_short,
         "skew_days": skew,
         "per_market": {k: {"as_of": v, "label": names.get(k, k),
                            "lag_days": (today_utc - parsed[k]).days}
@@ -705,6 +719,58 @@ def avg_usable(series):
     if not ok:
         return None, skipped
     return round(sum(s["score"] for s in ok) / len(ok), 3), skipped
+
+
+def series_facts(s, kind="price"):
+    """给首屏用的「事实」：最新点位、1/5/20 日变化、RSI、距 200 日均线。
+
+    为什么不让前端自己算：首屏在 series.json（约 700KB）加载**之前**就要有数字，
+    否则读者先看到的是 7 张"只有指针、没有行情"的空卡片——这正是"上面信息太少"
+    的根因。所以由服务端先算好一小撮数（每条约 120 字节）塞进 market.json。
+
+    kind="yield" 时变化量用 bp 而不是百分比：10Y 从 4.989 走到 4.929 是 −6bp，
+    按百分比写会变成 −1.2%，被读成"跌了一成"。
+    """
+    if not s or not s.get("usable"):
+        return None
+    close = s.get("close") or []
+    if len(close) < 2 or close[-1] is None:
+        return None
+
+    def chg(n):
+        if len(close) <= n:
+            return None
+        prev = close[-1 - n]
+        if not prev:
+            return None
+        if kind == "yield":
+            return round((close[-1] - prev) * 100, 1)      # % → bp
+        return round((close[-1] / prev - 1) * 100, 2)
+
+    ma200 = s.get("ma200") or []
+    rsi_arr = s.get("rsi") or []
+    vol = s.get("vol") or []
+    vma = s.get("volMa20") or []
+
+    out = {
+        "name": s.get("name"),
+        "last": s.get("latest"),
+        "date": s.get("lastCloseDate"),
+        "chg1": chg(1), "chg5": chg(5), "chg20": chg(20),
+        "rsi": round(rsi_arr[-1], 1) if rsi_arr and rsi_arr[-1] is not None else None,
+        "ma200_dev": None,
+        "vol_ratio": None,
+        "kind": kind,
+        "score": s.get("score"),
+    }
+    if ma200 and ma200[-1]:
+        if kind == "yield":
+            out["ma200_dev"] = round((close[-1] - ma200[-1]) * 100, 1)   # bp
+        else:
+            out["ma200_dev"] = round((close[-1] / ma200[-1] - 1) * 100, 1)
+    if vol and vma and vma[-1] and vol[-1] is not None:
+        out["vol_ratio"] = round(vol[-1] / vma[-1], 2)
+    return out
 
 
 def series_indicators_block(s):
@@ -864,6 +930,15 @@ def main():
         markets[key] = {"label": label, "score": score, "verdict": verdict, "sub": sub}
         if extra:
             markets[key].update(extra)
+            # 统一在这里派生 facts，而不是让 5 个调用点各写一遍：
+            # 各写一遍必然会有维度漏掉，而漏掉的表现在前端就是"某张卡没有数字"。
+            # 债券是收益率序列，变化量要走 bp 口径。
+            sers = markets[key].get("series")
+            if sers:
+                kind = "yield" if key == "bonds" else "price"
+                facts = [f for f in (series_facts(s, kind) for s in sers) if f]
+                if facts:
+                    markets[key]["facts"] = facts
         dims[key] = score
 
     def add_heat(group, name, score):
@@ -1095,9 +1170,13 @@ def main():
             carry_score = round(clamp(mom / 0.05), 3)
             regime = ("套息顺畅·risk-on" if mom > 0.01 else
                       "套息承压·risk-off" if mom < -0.01 else "中性")
+            carry_extra = {"usdjpy": round(cj[-1], 2), "mom20": round(mom, 4)}
+            # 把 USD/JPY 序列也挂上，只为了让 add_dim 能派生 facts（首屏要显示
+            # 汇率点位与当日变动）。没有它这张卡就只有指针、没有数字。
+            if fx_series:
+                carry_extra["series"] = fx_series
             add_dim("yen_carry", "日元/套息", carry_score, verdict_from_score(carry_score),
-                    f"USD/JPY 20日变动 {mom*100:+.1f}% · {regime}",
-                    {"usdjpy": round(cj[-1], 2), "mom20": round(mom, 4)})
+                    f"USD/JPY 20日变动 {mom*100:+.1f}% · {regime}", carry_extra)
             add_heat("套息", "日元套息健康度", carry_score)
             print(f"  [OK] 日元套息 USD/JPY {cj[-1]:.2f} 20日{mom*100:+.1f}% 分 {carry_score} ({regime})")
         else:

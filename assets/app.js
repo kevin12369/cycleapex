@@ -64,6 +64,66 @@
     };
   }
 
+  // ---- 维度卡里的「行情事实」格式化 ----
+  // 不同量纲不能共用一套规则：收益率说"bp"、指数说"点"、汇率说"小数"。
+  // 混用会闹笑话——10Y 从 4.99 到 4.93 写成 −1.2% 会被读成"跌了一成"。
+  function fmtLast(v, kind) {
+    if (v == null) return "—";
+    if (kind === "yield") return v.toFixed(2) + "%";
+    if (Math.abs(v) >= 1000) return Math.round(v).toLocaleString("en-US");
+    if (Math.abs(v) >= 100) return v.toFixed(1);
+    return v.toFixed(2);
+  }
+  function fmtChg(v, kind, digits) {
+    if (v == null) return "—";
+    const d = digits == null ? (kind === "yield" ? 0 : 2) : digits;
+    const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+    const num = Math.abs(v).toFixed(d);
+    return sign + num + (kind === "yield" ? "bp" : "%");
+  }
+  // 涨跌配色沿用 A 股习惯：红涨绿跌（--bull 是红、--bear 是绿）
+  function chgClass(v) {
+    if (v == null) return "flat";
+    return v > 0 ? "up" : v < 0 ? "down" : "flat";
+  }
+
+  function factRowHtml(f) {
+    return '<div class="fact"><span class="fk">' + (f.name || "") + "</span>" +
+      '<span class="fv">' + fmtLast(f.last, f.kind) + "</span>" +
+      '<span class="fc ' + chgClass(f.chg1) + '">' + fmtChg(f.chg1, f.kind) + "</span></div>";
+  }
+
+  // 首屏每张维度卡除了指针，再给三样东西：主标的最新价 + 当日涨跌、
+  // 两行行情（多标的时折叠剩余）、一行技术读数。原来只有一句"综合 7"，
+  // 读者看不出这 7 分是涨出来的还是跌出来的。
+  function factsBlockHtml(key, facts) {
+    if (!facts || !facts.length) return "";
+    const f0 = facts[0];
+    const rows = facts.slice(0, 2).map(factRowHtml).join("");
+    let more = "";
+    if (facts.length > 2) {
+      const rest = facts.slice(2)
+        .map((f) => (f.name || "") + " " + fmtChg(f.chg1, f.kind)).join(" · ");
+      more = '<div class="dim-more">另 ' + (facts.length - 2) + " 条 " + rest + "</div>";
+    }
+    // 三项读数固定三格等宽，标签短、单位明确。
+    // 早先写成一句话 "RSI 40 · 距200日 +3.7% · 量比 1.15 · 10-30"，
+    // 窄卡下会折成两行，第二行只剩半句，一排卡片立刻参差不齐。
+    // 日期也不再重复：页头已有"数据截止"，各市场不同步时逐卡标日期反而更乱。
+    const cell = (txt) => "<span>" + txt + "</span>";
+    const ma2 = f0.ma200_dev == null
+      ? "—"
+      // 偏离度给 1 位就够：-9.9% 和 -9.90% 传达的信息一样，但后者更容易被窄卡截断。
+      : (f0.kind === "yield" ? fmtChg(f0.ma200_dev, "yield") : fmtChg(f0.ma200_dev, "price", 1));
+    const cells = [
+      cell(f0.rsi == null ? "RSI —" : "RSI " + f0.rsi.toFixed(0)),
+      cell("MA200 " + ma2),
+      cell(f0.vol_ratio == null ? "量比 —" : "量比 " + f0.vol_ratio.toFixed(2)),
+    ].join("");
+    return '<div class="dim-facts">' + rows + more +
+      '<div class="dim-meta">' + cells + "</div></div>";
+  }
+
   function renderGauges() {
     const m = DATA.markets || {};
     // 维度清单以「数据里实际存在的 market」为准，不再硬编码。
@@ -91,7 +151,18 @@
       const chart = document.createElement("div");
       chart.className = "gauge"; chart.id = "g_" + c.key;
       const s = document.createElement("div"); s.className = "sub"; s.textContent = sub;
-      div.appendChild(title); div.appendChild(chart); div.appendChild(s);
+      div.appendChild(title); div.appendChild(chart);
+      // 有 facts 就用 facts 占位（信息量远大于一句"综合 7"），
+      // 原始 sub 文案退到 title 里备查，不再重复占一行。
+      const factsHtml = factsBlockHtml(c.key, mk && mk.facts);
+      if (factsHtml) {
+        const holder = document.createElement("div");
+        holder.innerHTML = factsHtml;
+        div.appendChild(holder.firstChild);
+        div.title = sub;
+      } else {
+        div.appendChild(s);
+      }
       host.appendChild(div);
       const inst = echarts.init(chart);
       GAUGE_INSTANCES[c.key] = inst;
@@ -285,7 +356,7 @@
       const v = Math.round(ov.score * 100);
       const gap = Math.round((0.33 - Math.abs(ov.score)) * 100);
       sc.textContent = (ov.verdict === "neutral" && gap > 0)
-        ? "综合分 " + v + " · 距触发判定还差 " + gap
+        ? "综合分 " + v + " · 距判定线 " + gap
         : "综合分 " + v + " · " + (ov.verdict === "bull" ? "偏多" : ov.verdict === "bear" ? "偏空" : "中性");
     }
     // 十年分位：只回答「今天这个分，放在过去十年里算高还是低」，
@@ -341,22 +412,24 @@
       const c = computeConsensus(currentWeights);
       const CV = { bull: "多头共识", bear: "空头共识", neutral: "无共识" };
       if (!c.total) {
-        cons.innerHTML = "共识口径：<span style=\"color:var(--muted)\">数据不足</span>";
+        cons.innerHTML = '<span class="cvrow">共识口径：<span style="color:var(--muted)">数据不足</span></span>';
       } else {
         const netTxt = (c.net > 0 ? "+" : "") + c.net;
+        const needTxt = c.verdict === "neutral" ? "需 " + c.need + " 票" : "达 " + c.need + " 票门槛";
+        // 压成一行：原来带括号解释 + 下面再挂一条"两个口径不一致"的整句，
+        // 一共占 114px（hero 总高才 558px），把整块仪表盘挤出首屏。
+        // 门槛怎么算挂 title，分歧只留一个可悬停的角标。
         cons.innerHTML =
-          '共识口径：<span class="vote"><b style="color:var(--bull)">' + c.bull + "多</b> · " +
-          '<b style="color:var(--muted)">' + c.neutral + "中</b> · " +
+          '<span class="cvrow">' +
+          '<span class="cv-label">共识</span>' +
+          '<span class="vote"><b style="color:var(--bull)">' + c.bull + "多</b>" +
+          '<b style="color:var(--muted)">' + c.neutral + "中</b>" +
           '<b style="color:var(--bear)">' + c.bear + "空</b></span>" +
-          '（净 ' + netTxt + "/" + c.total + "，" + (c.verdict === "neutral" ? "需 ±" + c.need + " 票才算共识" : "已达 ±" + c.need + " 票门槛") + "）" +
-          '<span class="cv ' + c.verdict + '">' + CV[c.verdict] + "</span>";
-        // 加权口径与共识口径分歧时点明，避免读者只挑顺眼的那个看
-        if (c.verdict !== "neutral" && ov.verdict !== c.verdict) {
-          cons.innerHTML += '<div style="margin-top:4px;color:var(--neutral)">' +
-            "⚠ 两个口径不一致：加权平均" + VERDICT_TEXT[ov.verdict] +
-            "、共识投票" + VERDICT_TEXT[c.verdict] +
-            " —— 说明分歧集中在少数极端维度上。</div>";
-        }
+          '<span class="cv-sep">净 ' + netTxt + " / " + c.total + " · " + needTxt + "</span>" +
+          '<span class="cv ' + c.verdict + '">' + CV[c.verdict] + "</span>" +
+          // 这里不再挂"⚠ 与加权不一致"角标：structural_signal 那段话已经把
+          // 两个口径的分歧和原因讲清楚了，再加一个角标是第三次重复。
+          "</span>";
       }
     }
 
@@ -369,12 +442,16 @@
       const stale = f.status === "stale";
       const skewed = (f.skew_days || 0) > 1;
       if (stale || skewed) {
-        alertEl.innerHTML = "⚠ " + (f.note || "数据可能不是最新") +
-          (f.as_of ? `（截止 ${f.as_of}）` : "");
-        alertEl.className = "hero-alert show" + (stale ? " severe" : "");
+        // 正文只放一行短句（后端 note_short），完整说明退到 title。
+        // 原来那句 40+ 字要折三行，占 107px，读者还没看到仪表盘就先读到一段免责说明。
+        alertEl.innerHTML = "⚠ " + (f.note_short || f.note || "数据可能不是最新");
+        alertEl.title = f.note || "";
+        // 注意保留 foot-seg：直接赋 className 会把这个类覆盖掉，
+        // 元素立刻失去脚注区的排版（间距、nowrap）。
+        alertEl.className = "foot-seg hero-alert show" + (stale ? " severe" : "");
       } else {
         alertEl.innerHTML = "";
-        alertEl.className = "hero-alert";
+        alertEl.className = "foot-seg hero-alert";
       }
     }
 

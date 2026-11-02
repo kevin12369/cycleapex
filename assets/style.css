@@ -44,7 +44,10 @@ header.topbar {
 
 .section-title { font-size: 14px; color: var(--muted); margin: 26px 0 12px; text-transform: uppercase; letter-spacing: 1px; }
 
-.gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+/* 固定 4 列而不是 auto-fit：7 张卡在任何 auto-fit 宽度下都会排成 5+2，
+   第二排两张各自拉宽、和第一排不对齐。固定列数 ⇒ 4+3，第二排留一格空位，
+   但每张卡宽度一致。窄屏两级降列。 */
+.gauges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
   padding: 12px; box-shadow: var(--shadow);
@@ -52,7 +55,32 @@ header.topbar {
 .card h3 { margin: 0 0 4px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
 .card .sub { color: var(--muted); font-size: 12px; }
 .card p.sub { margin: 0 0 14px; line-height: 1.5; }
-.gauge { width: 100%; height: 150px; }
+.gauge { width: 100%; height: 118px; }
+/* 中等宽度放不下 4 列（卡里现在有行情数字，比原来挤），降到 3 列；
+   再窄由后面的 900px 断点降到 2 列。顺序不能颠倒——同优先级下后者胜。 */
+@media (max-width: 1280px) { .gauges { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---- 维度卡下方的行情事实（首屏要能直接看到数字，别只有一根指针） ---- */
+.dim-facts { margin-top: 2px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.fact { display: flex; align-items: baseline; gap: 6px; font-size: 11.5px; line-height: 1.7;
+  font-variant-numeric: tabular-nums; }
+.fact .fk { flex: 1 1 auto; min-width: 0; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fact .fv { color: var(--text); font-weight: 600; }
+.fact .fc { min-width: 54px; text-align: right; font-weight: 700; }
+/* 红涨绿跌，与 A 股习惯一致 */
+.fact .fc.up { color: var(--bull); }
+.fact .fc.down { color: var(--bear); }
+.fact .fc.flat { color: var(--muted); }
+.dim-more { margin-top: 2px; font-size: 10.5px; color: var(--muted); line-height: 1.6; }
+/* 三项读数：按内容宽度排、间距均分。
+   早先用 repeat(3, 1fr) 等分，窄卡下每格只有 60px，`MA200 +3.70%` 会被截成
+   `MA200 +3.7…`——等宽好看但把数字吃掉，宁可不等宽。 */
+.dim-meta { display: grid; grid-template-columns: auto auto auto; justify-content: space-between;
+  gap: 2px 4px; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.05);
+  font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dim-meta > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dim-meta > span:nth-child(3) { text-align: right; }
 
 .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 /* 平板及以下：K线 + 分条图 改为上下堆叠，等宽（各占满一行） */
@@ -129,24 +157,30 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
    后者在窄屏（.hero 变 flex-direction:column）时 100% 会按"高度"解析，
    脚注会被拉成整屏高。写成 width 就没有方向歧义。 */
 .hero-foot { flex: 0 0 auto; width: 100%; margin-top: 6px; padding-top: 10px;
-  border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
-  line-height: 1.5; cursor: help; }
+  border-top: 1px solid var(--border); display: flex; flex-wrap: wrap;
+  align-items: baseline; gap: 3px 22px;
+  font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+/* 空的分段不占位、也不留分隔线 */
+.hero-foot .foot-seg:empty { display: none; }
+.hero-foot .foot-seg { white-space: nowrap; cursor: help; }
 .hero-foot b { color: var(--text); font-weight: 600; }
-.hero-foot:empty { display: none; }
 .hero-split { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .hero-sub { font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); white-space: nowrap; }
 .hero-sub.bull { background: rgba(239,75,75,.15); color: var(--bull); border-color: rgba(239,75,75,.45); }
 .hero-sub.bear { background: rgba(31,184,107,.15); color: var(--bear); border-color: rgba(31,184,107,.45); }
 .hero-sub.neutral { background: rgba(212,160,23,.15); color: var(--neutral); border-color: rgba(212,160,23,.45); }
 .hero-hint { margin-top: 4px; font-size: 11px; color: var(--muted); letter-spacing: 1px; }
-/* 共识计数（与加权口径并列的第二条腿） */
-.hero-consensus { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; }
-.hero-consensus b { font-size: 13px; }
-.hero-consensus .cv { font-weight: 800; padding: 1px 8px; border-radius: 999px; margin-left: 4px; }
-.hero-consensus .cv.bull { background: rgba(239,75,75,.18); color: var(--bull); }
-.hero-consensus .cv.bear { background: rgba(31,184,107,.18); color: var(--bear); }
-.hero-consensus .cv.neutral { background: rgba(212,160,23,.18); color: var(--neutral); }
-.hero-consensus .vote { white-space: nowrap; }
+/* 共识计数（与加权口径并列的第二条腿）—— 现在在底部元信息带里，压成一行 */
+#heroConsensus .cvrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; }
+#heroConsensus .cv-label { color: var(--muted); }
+#heroConsensus .vote { display: inline-flex; gap: 1px; align-items: baseline; }
+#heroConsensus .cv-sep { font-size: 11px; }
+#heroConsensus .cv-flag { font-size: 11px; color: var(--neutral); }
+#heroConsensus b { font-size: 12px; }
+#heroConsensus .cv { font-weight: 800; padding: 0 7px; border-radius: 999px; }
+#heroConsensus .cv.bull { background: rgba(239,75,75,.18); color: var(--bull); }
+#heroConsensus .cv.bear { background: rgba(31,184,107,.18); color: var(--bear); }
+#heroConsensus .cv.neutral { background: rgba(212,160,23,.18); color: var(--neutral); }
 /* 数据状态徽章：灰=最新 / 黄=休市 / 橙=陈旧。
    刻意避开 --bull(红) 与 --bear(绿)——那两个是 A 股涨跌色，
    用来标「数据新不新」会被误读成行情方向。 */
@@ -154,10 +188,10 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
 .badge.fresh-closed { background: rgba(212,160,23,.16); color: var(--neutral); }
 .badge.fresh-stale { background: rgba(240,136,62,.18); color: #f0883e; }
 /* 休市 / 数据不齐提示：只在需要时出现，平时不占视觉重量 */
-.hero-alert { display: none; margin-top: 8px; font-size: 12px; line-height: 1.55;
-  color: var(--neutral); text-align: left; }
-.hero-alert.show { display: block; padding: 6px 10px; border-radius: 8px;
-  background: rgba(212,160,23,.12); border: 1px solid rgba(212,160,23,.35); }
+/* 数据状态提示：只在需要时出现，现在活在底部元信息带里，所以用 inline 而不是块级 */
+.hero-alert { display: none; color: var(--neutral); }
+.hero-alert.show { display: inline; padding: 1px 7px; border-radius: 6px;
+  background: rgba(212,160,23,.12); border: 1px solid rgba(212,160,23,.3); }
 /* 陈旧用橙色 + 加粗，不用红绿：红绿在这套 UI 里已经被涨跌占用了 */
 .hero-alert.show.severe { color: #f0883e; font-weight: 600;
   background: rgba(240,136,62,.12); border-color: rgba(240,136,62,.45); }
@@ -190,7 +224,7 @@ footer { color: var(--muted); font-size: 12px; padding: 26px; text-align: center
   #klineChart { height: 340px; }
   #indicatorChart { height: 170px; }
   #heatmapChart { height: 420px; }            /* 13 维度需更高，避免行被压扁 */
-  .gauges { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .gauges { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .gauge { height: 128px; }
   .section-title { font-size: 12.5px; }
   .card { padding: 10px; }
