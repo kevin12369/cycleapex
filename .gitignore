@@ -21,3 +21,4 @@ data/etf_backtest_index.json
 # 开发期临时验证产物（截图、临时脚本）
 _*.png
 _*.js
+_*.txt
