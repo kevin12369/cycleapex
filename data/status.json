@@ -1,10 +1,10 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-06T01:13:05Z",
+  "generated_at": "2026-11-06T01:18:46Z",
   "overall": {
-    "score": -0.216,
+    "score": -0.206,
     "verdict": "neutral",
-    "score_ex_sentiment": -0.142
+    "score_ex_sentiment": -0.143
   },
   "consensus": {
     "bull": 1,
