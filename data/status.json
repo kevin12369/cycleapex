@@ -1,27 +1,27 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-05T01:13:23Z",
+  "generated_at": "2026-11-06T01:13:05Z",
   "overall": {
-    "score": -0.047,
+    "score": -0.216,
     "verdict": "neutral",
-    "score_ex_sentiment": -0.06
+    "score_ex_sentiment": -0.142
   },
   "consensus": {
     "bull": 1,
-    "bear": 2,
-    "neutral": 4,
+    "bear": 4,
+    "neutral": 2,
     "total": 7,
-    "net": -1,
+    "net": -3,
     "need": 3,
-    "ratio": -0.143,
-    "verdict": "neutral"
+    "ratio": -0.429,
+    "verdict": "bear"
   },
-  "data_as_of": "2026-11-05",
+  "data_as_of": "2026-11-06",
   "freshness_status": "live",
   "freshness_lag_days": 0,
   "dims_available": 7,
   "dims_total": 7,
-  "dim_rows": 24,
+  "dim_rows": 25,
   "write_skipped": false,
   "note": "全部维度可用"
 }
