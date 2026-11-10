@@ -1,27 +1,27 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-07T00:33:02Z",
+  "generated_at": "2026-11-10T01:25:26Z",
   "overall": {
-    "score": -0.238,
-    "verdict": "neutral",
-    "score_ex_sentiment": -0.177
+    "score": -0.339,
+    "verdict": "bear",
+    "score_ex_sentiment": -0.37
   },
   "consensus": {
-    "bull": 1,
-    "bear": 5,
+    "bull": 0,
+    "bear": 4,
     "neutral": 1,
-    "total": 7,
+    "total": 5,
     "net": -4,
-    "need": 3,
-    "ratio": -0.571,
+    "need": 2,
+    "ratio": -0.8,
     "verdict": "bear"
   },
-  "data_as_of": "2026-11-06",
-  "freshness_status": "market_closed",
-  "freshness_lag_days": 1,
-  "dims_available": 7,
+  "data_as_of": "2026-11-10",
+  "freshness_status": "live",
+  "freshness_lag_days": 0,
+  "dims_available": 5,
   "dims_total": 7,
-  "dim_rows": 25,
+  "dim_rows": 26,
   "write_skipped": false,
-  "note": "全部维度可用"
+  "note": "部分维度因数据源本次不可达而缺失，已按可用维度归一化"
 }
