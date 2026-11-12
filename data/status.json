@@ -1,27 +1,27 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-11T00:57:59Z",
+  "generated_at": "2026-11-12T01:14:08Z",
   "overall": {
-    "score": -0.139,
+    "score": -0.251,
     "verdict": "neutral",
-    "score_ex_sentiment": -0.143
+    "score_ex_sentiment": -0.321
   },
   "consensus": {
-    "bull": 1,
+    "bull": 0,
     "bear": 4,
-    "neutral": 2,
-    "total": 7,
-    "net": -3,
-    "need": 3,
-    "ratio": -0.429,
+    "neutral": 1,
+    "total": 5,
+    "net": -4,
+    "need": 2,
+    "ratio": -0.8,
     "verdict": "bear"
   },
-  "data_as_of": "2026-11-11",
+  "data_as_of": "2026-11-12",
   "freshness_status": "live",
   "freshness_lag_days": 0,
-  "dims_available": 7,
+  "dims_available": 5,
   "dims_total": 7,
-  "dim_rows": 27,
+  "dim_rows": 28,
   "write_skipped": false,
-  "note": "全部维度可用"
+  "note": "部分维度因数据源本次不可达而缺失，已按可用维度归一化"
 }
