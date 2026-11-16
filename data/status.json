@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "generated_at": "2026-11-14T01:09:46Z",
+  "generated_at": "2026-11-16T01:14:36Z",
   "overall": {
     "score": -0.242,
     "verdict": "neutral",
@@ -16,12 +16,12 @@
     "ratio": -0.571,
     "verdict": "bear"
   },
-  "data_as_of": "2026-11-13",
-  "freshness_status": "market_closed",
-  "freshness_lag_days": 1,
+  "data_as_of": "2026-11-16",
+  "freshness_status": "live",
+  "freshness_lag_days": 0,
   "dims_available": 7,
   "dims_total": 7,
-  "dim_rows": 29,
+  "dim_rows": 30,
   "write_skipped": false,
   "note": "全部维度可用"
 }
